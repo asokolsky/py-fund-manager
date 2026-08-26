@@ -147,6 +147,13 @@ Duplicate transaction IDs are rejected when loading a ledger. Ledger-wide
 deduplication by `external_id` and chronological-order validation are not yet
 implemented.
 
+Rebalance state derivation treats `opening_position`, `buy`, and `transfer_in` as
+position increases; `sell` and `transfer_out` as decreases; and
+`position_adjustment` as a signed change. Cash events require `amount`. Trade cash
+uses `amount` when present or `price × quantity` otherwise, and fees reduce cash.
+Split derivation and non-base-currency transactions are rejected until their
+accounting rules are implemented.
+
 ## Strategy schema
 
 `strategy.yaml` has this validated shape:
@@ -227,6 +234,60 @@ For a requested time, the active assignment is the last assignment whose
 assignment, the referenced strategy or revision is unavailable, or the history is
 ambiguous. Recording a new assignment neither rebalances the portfolio nor writes
 financial transactions.
+
+## Rebalance plan schema
+
+The rebalance command emits a validated JSON document to standard output:
+
+```json
+{
+  "schema_version": 1,
+  "portfolio_id": "etrade-brokerage",
+  "strategy_assignment_id": "assignment-example",
+  "strategy": {
+    "id": "SnP500-direct",
+    "revision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "generated_at": "2026-08-26T12:00:01Z",
+  "valuation": {
+    "as_of": "2026-08-26T12:00:00Z",
+    "currency": "USD",
+    "holdings_value": "95000.00",
+    "available_cash": "5000.00",
+    "contribution": "10000.00",
+    "withdrawal": "0.00",
+    "target_portfolio_value": "110000.00"
+  },
+  "orders": [
+    {
+      "ticker": "AAPL",
+      "side": "buy",
+      "current_quantity": "10",
+      "current_value": "2200.00",
+      "target_weight": "0.061234567890",
+      "target_value": "6735.80",
+      "estimated_price": "220.00",
+      "price_as_of": "2026-08-26",
+      "quantity": "20.617272",
+      "estimated_notional": "4535.80",
+      "reason": "underweight"
+    }
+  ],
+  "summary": {
+    "buy_orders": 1,
+    "sell_orders": 0,
+    "estimated_buys": "4535.80",
+    "estimated_sells": "0.00",
+    "estimated_ending_cash": "10464.20"
+  },
+  "warnings": []
+}
+```
+
+Decimal values serialize as JSON strings. Order sides are `buy` or `sell`; reasons
+are `underweight`, `overweight`, or `not_in_strategy`. The plan identifies the
+exact effective strategy assignment and immutable revision. It is not a broker
+order or an execution report and is never written to the transaction ledger.
 
 ## CLI usage
 

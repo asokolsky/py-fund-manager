@@ -155,14 +155,12 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
     def test_create_portfolio(self) -> None:
         """Create loadable account configuration in the portfolio hierarchy."""
         with tempfile.TemporaryDirectory() as directory:
-            portfolio_directory = create_portfolio(
-                Path(directory), 'etrade-alex-roth-ira'
-            )
+            portfolio_directory = create_portfolio(Path(directory), 'etrade-brokerage')
             portfolio = load_portfolio(portfolio_directory / 'portfolio.yaml')
 
-        self.assertEqual(portfolio.id, 'etrade-alex-roth-ira')
+        self.assertEqual(portfolio.id, 'etrade-brokerage')
         self.assertEqual(portfolio.broker, 'etrade')
-        self.assertEqual(portfolio.account_id, 'etrade-alex-roth-ira')
+        self.assertEqual(portfolio.account_id, 'etrade-brokerage')
 
     def test_import_opening_positions_preserves_source_and_writes_ledger(
         self,

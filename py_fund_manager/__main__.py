@@ -10,6 +10,7 @@ from argparse import (
     RawTextHelpFormatter,
 )
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 import yaml
@@ -19,6 +20,7 @@ from .config import ConfigurationError, configured_data_root
 from .download import Interval, download, inclusive_year_range, tickers_argument
 from .log import setup_logging
 from .portfolio import create_portfolio, import_opening_positions
+from .rebalance import rebalance_portfolio
 from .strategy import (
     assign_strategy,
     effective_assignment,
@@ -32,9 +34,9 @@ epilog = """Examples:
     python -m py_fund_manager --version
     python -m py_fund_manager -v download 2024-2025 --tickers=AAPL,MSFT
     python -m py_fund_manager download 2020 --tickers=@tickers.txt --interval=1w
-    python -m py_fund_manager portfolio --create etrade-alex-roth-ira
-    python -m py_fund_manager portfolio --create etrade-alex-roth-ira import-stocks stocks.csv
-    python -m py_fund_manager portfolio etrade-alex-roth-ira strategy show
+    python -m py_fund_manager portfolio --create etrade-brokerage
+    python -m py_fund_manager portfolio --create etrade-brokerage import-stocks stocks.csv
+    python -m py_fund_manager portfolio etrade-brokerage strategy show
 """
 
 log: logging.Logger | None = None
@@ -145,8 +147,12 @@ def main() -> int:
                         f'Imported {imported} opening positions from {action.stocks_file}'
                     )
             elif args.portfolio_id is not None:
-                action = _parse_strategy_action(args.portfolio_arguments)
-                return _strategy_command(directory, args.portfolio_id, action)
+                action = _parse_portfolio_action(args.portfolio_arguments)
+                if action.portfolio_command == 'strategy':
+                    result = _strategy_command(directory, args.portfolio_id, action)
+                else:
+                    result = _rebalance_command(directory, args.portfolio_id, action)
+                return result
             else:
                 portfolio_parser.error(
                     '--create PORTFOLIO_ID or an existing portfolio ID is required'
@@ -173,6 +179,19 @@ def effective_time(value: str) -> datetime:
     return parsed
 
 
+def nonnegative_amount(value: str) -> Decimal:
+    """Parse a nonnegative decimal amount for a CLI argument."""
+    try:
+        amount = Decimal(value)
+    except InvalidOperation as error:
+        msg = 'amount must be a decimal number'
+        raise ArgumentTypeError(msg) from error
+    if not amount.is_finite() or amount < 0:
+        msg = 'amount must be a finite nonnegative decimal number'
+        raise ArgumentTypeError(msg)
+    return amount
+
+
 def _parse_create_action(arguments: list[str]) -> Namespace:
     """Parse an optional action performed immediately after portfolio creation."""
     parser = ArgumentParser(prog=f'{CLI_NAME} portfolio --create PORTFOLIO_ID')
@@ -182,8 +201,8 @@ def _parse_create_action(arguments: list[str]) -> Namespace:
     return parser.parse_args(arguments)
 
 
-def _parse_strategy_action(arguments: list[str]) -> Namespace:
-    """Parse a strategy operation for an existing portfolio."""
+def _parse_portfolio_action(arguments: list[str]) -> Namespace:
+    """Parse an operation for an existing portfolio."""
     parser = ArgumentParser(prog=f'{CLI_NAME} portfolio PORTFOLIO_ID')
     commands = parser.add_subparsers(dest='portfolio_command', required=True)
     strategy_parser = commands.add_parser('strategy')
@@ -197,6 +216,15 @@ def _parse_strategy_action(arguments: list[str]) -> Namespace:
     set_parser.add_argument('strategy_id')
     set_parser.add_argument('--effective-at', type=effective_time)
     set_parser.add_argument('--reason')
+    rebalance_parser = commands.add_parser('rebalance')
+    cash_flow = rebalance_parser.add_mutually_exclusive_group()
+    cash_flow.add_argument(
+        '--contribute', type=nonnegative_amount, default=Decimal(0), dest='contribution'
+    )
+    cash_flow.add_argument(
+        '--withdraw', type=nonnegative_amount, default=Decimal(0), dest='withdrawal'
+    )
+    rebalance_parser.add_argument('--as-of', type=effective_time)
     return parser.parse_args(arguments)
 
 
@@ -231,6 +259,19 @@ def _strategy_command(directory: Path, portfolio_id: str, args: Namespace) -> in
         'strategy': strategy.model_dump(mode='json', exclude_none=True),
     }
     print(yaml.safe_dump(document, sort_keys=False), end='')
+    return 0
+
+
+def _rebalance_command(directory: Path, portfolio_id: str, args: Namespace) -> int:
+    """Generate a JSON rebalance order plan for an existing portfolio."""
+    plan = rebalance_portfolio(
+        directory,
+        portfolio_id,
+        args.as_of or datetime.now(UTC),
+        contribution=args.contribution,
+        withdrawal=args.withdrawal,
+    )
+    print(plan.model_dump_json(indent=2))
     return 0
 
 

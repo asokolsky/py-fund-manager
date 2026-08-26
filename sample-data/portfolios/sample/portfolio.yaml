@@ -1,5 +1,5 @@
 schema_version: 1
-id: sample-portfolio
+id: sample
 name: Fictional Sample Portfolio
 broker: example
 account_id: sample-account

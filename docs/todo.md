@@ -16,11 +16,11 @@ unimplemented. Items stay here until they are addressed.
 - **TODO: Reconciliation.** Compare later broker snapshots with derived positions
   and cash, report differences, and require explicit approval before writing
   `position_adjustment` rows.
-- **TODO: Derived state and analytics.** Calculate holdings, cash, portfolio value,
-  annualized and benchmark-relative performance, holding-period results, and
-  realized gains or losses.
-- **TODO: Rebalance planning.** Produce contribution, withdrawal, and rebalance
-  order plans using the effective assignment and immutable strategy revision.
+- **TODO: Analytics.** Calculate annualized and benchmark-relative performance,
+  holding-period results, and realized gains or losses.
+- **TODO: Broker order adaptation.** Translate broker-neutral rebalance plans into
+  whole-share or fractional orders with broker minimums, price precision, tax-lot
+  selection, limit-price policy, and explicit submission approval.
 - **TODO: Terminal UI.** Browse portfolios through a terminal interface.
 
 ## Supporting design and validation

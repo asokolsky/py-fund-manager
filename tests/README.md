@@ -38,6 +38,8 @@ mise exec -- uv run -m unittest -v \
 - `main_test.py` covers CLI parsing and dispatch.
 - `portfolio_test.py` covers portfolio, transaction, strategy, and import
   validation.
+- `rebalance_test.py` covers derived holdings, cash, cached-price selection, and
+  strict contribution and withdrawal plans.
 - `strategy_test.py` covers immutable strategy revisions and effective assignment
   history.
 

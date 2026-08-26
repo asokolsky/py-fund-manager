@@ -17,6 +17,12 @@ effective strategy assignment.
 
 Use `mise run py-fund-manager -- --help` for the current command list.
 
+Show the installed version:
+
+```shell
+mise run py-fund-manager -- --version
+```
+
 ## Data root
 
 Portfolio commands read the data root from the per-user configuration file:

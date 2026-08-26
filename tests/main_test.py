@@ -6,7 +6,8 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import UTC, datetime
-from unittest.mock import patch
+from decimal import Decimal
+from unittest.mock import Mock, patch
 
 from py_fund_manager import __main__ as cli
 from py_fund_manager.download import Interval
@@ -29,7 +30,7 @@ class TestCLI(unittest.TestCase):
             cli.CLI_NAME,
             'portfolio',
             '--create',
-            'etrade-alex-roth-ira',
+            'etrade-brokerage',
         ]
         with (
             patch.object(sys, 'argv', arguments),
@@ -86,12 +87,12 @@ class TestCLI(unittest.TestCase):
             cli.CLI_NAME,
             'portfolio',
             '--create',
-            'etrade-alex-roth-ira',
+            'etrade-brokerage',
             'import-stocks',
             'stocks.csv',
         ]
         data_directory = cli.Path('test-data')
-        portfolio_directory = data_directory / 'portfolios' / 'etrade-alex-roth-ira'
+        portfolio_directory = data_directory / 'portfolios' / 'etrade-brokerage'
         with (
             patch.object(sys, 'argv', arguments),
             patch.object(cli, 'data_directory', return_value=data_directory),
@@ -105,7 +106,7 @@ class TestCLI(unittest.TestCase):
             result = cli.main()
 
         self.assertEqual(result, 0)
-        create_mock.assert_called_once_with(data_directory, 'etrade-alex-roth-ira')
+        create_mock.assert_called_once_with(data_directory, 'etrade-brokerage')
         import_mock.assert_called_once_with(portfolio_directory, cli.Path('stocks.csv'))
 
     def test_set_portfolio_strategy(self) -> None:
@@ -122,7 +123,7 @@ class TestCLI(unittest.TestCase):
         arguments = [
             cli.CLI_NAME,
             'portfolio',
-            'etrade-alex-roth-ira',
+            'etrade-brokerage',
             'strategy',
             'set',
             'SnP500-direct',
@@ -145,11 +146,47 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(result, 0)
         assign_mock.assert_called_once_with(
             data_directory,
-            'etrade-alex-roth-ira',
+            'etrade-brokerage',
             'SnP500-direct',
             effective_at,
             'Adopt direct replication',
         )
+
+    def test_rebalance_portfolio_with_contribution(self) -> None:
+        """Parse a contribution and write the rebalance plan as JSON."""
+        arguments = [
+            cli.CLI_NAME,
+            'portfolio',
+            'etrade-brokerage',
+            'rebalance',
+            '--contribute',
+            '10000.00',
+            '--as-of',
+            '2026-08-26T12:00:00Z',
+        ]
+        data_directory = cli.Path('test-data')
+        plan = Mock()
+        plan.model_dump_json.return_value = '{"schema_version":1}'
+        stdout = io.StringIO()
+        with (
+            patch.object(sys, 'argv', arguments),
+            patch.object(cli, 'data_directory', return_value=data_directory),
+            patch.object(
+                cli, 'rebalance_portfolio', return_value=plan
+            ) as rebalance_mock,
+            redirect_stdout(stdout),
+        ):
+            result = cli.main()
+
+        self.assertEqual(result, 0)
+        rebalance_mock.assert_called_once_with(
+            data_directory,
+            'etrade-brokerage',
+            datetime(2026, 8, 26, 12, tzinfo=UTC),
+            contribution=Decimal('10000.00'),
+            withdrawal=Decimal(0),
+        )
+        self.assertEqual(stdout.getvalue(), '{"schema_version":1}\n')
 
 
 if __name__ == '__main__':

@@ -59,8 +59,8 @@ basis points for small positions.
 
 ## Pydantic models are the schema authority
 
-`Portfolio`, `Transaction`, `Strategy`, and `TargetAllocation` in
-`py_fund_manager/schemas.py` are frozen Pydantic models. Persisted-document
+All persisted inputs and structured outputs are defined as frozen Pydantic models
+in `py_fund_manager/schemas.py`. Persisted-document
 loaders reject unknown fields, unsupported YAML schema versions, invalid
 identifiers and tickers, naive timestamps, invalid decimal values, and
 transaction shapes missing required security fields. Examples in the storage

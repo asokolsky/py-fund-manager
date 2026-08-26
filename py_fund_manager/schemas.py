@@ -231,3 +231,113 @@ class StrategyHistory(BaseModel):
             msg = 'strategy assignments must have increasing effective times'
             raise ValueError(msg)
         return value
+
+
+class PriceObservation(BaseModel):
+    """Latest market price available for one ticker at a planning time."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True, str_strip_whitespace=True)
+
+    ticker: str = Field(min_length=1)
+    as_of: date
+    price: Decimal = Field(gt=0)
+    currency: str = Field(min_length=3, max_length=3)
+
+    @field_validator('ticker', 'currency', mode='before')
+    @classmethod
+    def normalize_price_code(cls, value: object) -> object:
+        """Normalize ticker and currency codes in price observations."""
+        return value.strip().upper() if isinstance(value, str) else value
+
+
+class OrderSide(StrEnum):
+    """Direction of a proposed rebalance order."""
+
+    BUY = 'buy'
+    SELL = 'sell'
+
+
+class OrderReason(StrEnum):
+    """Reason a proposed rebalance order is needed."""
+
+    UNDERWEIGHT = 'underweight'
+    OVERWEIGHT = 'overweight'
+    NOT_IN_STRATEGY = 'not_in_strategy'
+
+
+class RebalanceOrder(BaseModel):
+    """Broker-neutral intent for one security trade."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True)
+
+    ticker: str = Field(min_length=1)
+    side: OrderSide
+    current_quantity: Decimal = Field(ge=0)
+    current_value: Decimal = Field(ge=0)
+    target_weight: Decimal = Field(ge=0, le=1)
+    target_value: Decimal = Field(ge=0)
+    estimated_price: Decimal = Field(gt=0)
+    price_as_of: date
+    quantity: Decimal = Field(gt=0)
+    estimated_notional: Decimal = Field(gt=0)
+    reason: OrderReason
+
+
+class RebalanceValuation(BaseModel):
+    """Portfolio values and assumed cash flow used by a rebalance plan."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True)
+
+    as_of: datetime
+    currency: str = Field(min_length=3, max_length=3)
+    holdings_value: Decimal = Field(ge=0)
+    available_cash: Decimal
+    contribution: Decimal = Field(default=Decimal(0), ge=0)
+    withdrawal: Decimal = Field(default=Decimal(0), ge=0)
+    target_portfolio_value: Decimal = Field(ge=0)
+
+    @field_validator('as_of')
+    @classmethod
+    def validate_as_of(cls, value: datetime) -> datetime:
+        """Require an unambiguous valuation time."""
+        if value.tzinfo is None:
+            msg = 'valuation as_of must include a UTC offset'
+            raise ValueError(msg)
+        return value
+
+
+class RebalanceSummary(BaseModel):
+    """Aggregate order counts and estimated cash result."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True)
+
+    buy_orders: int = Field(ge=0)
+    sell_orders: int = Field(ge=0)
+    estimated_buys: Decimal = Field(ge=0)
+    estimated_sells: Decimal = Field(ge=0)
+    estimated_ending_cash: Decimal
+
+
+class RebalancePlan(BaseModel):
+    """Validated broker-neutral output of portfolio rebalance planning."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True)
+
+    schema_version: Literal[1] = 1
+    portfolio_id: str = Field(min_length=1)
+    strategy_assignment_id: str = Field(min_length=1)
+    strategy: StrategyRevisionReference
+    generated_at: datetime
+    valuation: RebalanceValuation
+    orders: tuple[RebalanceOrder, ...]
+    summary: RebalanceSummary
+    warnings: tuple[str, ...] = ()
+
+    @field_validator('generated_at')
+    @classmethod
+    def validate_generated_at(cls, value: datetime) -> datetime:
+        """Require an unambiguous plan generation time."""
+        if value.tzinfo is None:
+            msg = 'generated_at must include a UTC offset'
+            raise ValueError(msg)
+        return value

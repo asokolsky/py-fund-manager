@@ -8,7 +8,7 @@ result, and [Concepts](concepts.md#strategy) defines assignment semantics.
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio etrade-alex-roth-ira strategy show
+  portfolio etrade-brokerage strategy show
 ```
 
 By default, the command shows the assignment effective now. Use `--effective-at`
@@ -19,7 +19,7 @@ governing another time.
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio etrade-alex-roth-ira strategy history
+  portfolio etrade-brokerage strategy history
 ```
 
 The command shows assignments in effective-time order without modifying them.
@@ -28,7 +28,7 @@ The command shows assignments in effective-time order without modifying them.
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio etrade-alex-roth-ira strategy set SnP500-direct \
+  portfolio etrade-brokerage strategy set SnP500-direct \
   --effective-at 2026-09-01T00:00:00Z \
   --reason "Move to direct S&P 500 replication"
 ```
@@ -38,5 +38,5 @@ revision, then appends an assignment to `strategy-history.yaml` using an atomic
 write. Omitting `--effective-at` uses the current time.
 
 Assigning a strategy does not rebalance holdings, create financial transactions,
-or submit broker orders. A future rebalance command will use the assignment
+or submit broker orders. The rebalance command uses the assignment
 effective at the requested planning time.
