@@ -4,7 +4,6 @@ This directory contains committed strategy examples and reference material for
 the [`sample-data/`](../README.md) data root:
 
 - `two-stock-example/` is a fictional, validated strategy.
-- `SnP500/` is legacy S&P 500 reference material that still needs migration to the
-  validated strategy schema.
+- `SnP500-direct/` is a generated, constituent-level S&P 500 replication strategy.
 
 Create real or private strategies in the selected private data root.

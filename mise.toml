@@ -35,9 +35,9 @@ run = [
 description = "Format python sources"
 run = [
     # sort imports
-    'uv run ruff check --select I --fix py_fund_manager tests',
+    'uv run ruff check --select I --fix py_fund_manager tests sample-data/strategies/SnP500-direct/generate_strategy.py',
     # reformat sources
-    'uv run ruff format -v py_fund_manager tests',
+    'uv run ruff format -v py_fund_manager tests sample-data/strategies/SnP500-direct/generate_strategy.py',
 ]
 
 [tasks.lint]
@@ -45,13 +45,13 @@ description = "Lint python sources"
 run = [
     # check imports
     'uv run ruff check -v --select I py_fund_manager/*.py tests/*.py',
-    'uv run ruff check -v py_fund_manager/*.py tests/*.py'
+    'uv run ruff check -v py_fund_manager/*.py tests/*.py sample-data/strategies/SnP500-direct/generate_strategy.py'
 ]
 
 [tasks.mypy]
 description = "Check typing"
 run = [
-    'uv run mypy py_fund_manager tests'
+    'uv run mypy py_fund_manager tests sample-data/strategies/SnP500-direct/generate_strategy.py'
 ]
 
 [tasks.tests]

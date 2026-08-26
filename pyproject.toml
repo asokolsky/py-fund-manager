@@ -9,6 +9,7 @@ description = "Just playing with financial CLIs."
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "defusedxml",
     "Jinja2",
     "pandas",
     "pyarrow",
@@ -26,6 +27,7 @@ packages = ["py_fund_manager"]
 [dependency-groups]
 # uv sync --group dev
 dev = [
+    "types-defusedxml",
     "types-tabulate",
     "textual-dev",
     "mypy>=1.16.1",
@@ -58,6 +60,9 @@ ignore = [
     "T201",
     "TRY003","TRY300"
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"sample-data/strategies/SnP500-direct/generate_strategy.py" = ["INP001"]
 
 [tool.ruff.format]
 quote-style = "single"

@@ -9,15 +9,13 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from py_fund_manager.portfolio import (
-    Portfolio,
-    Transaction,
-    TransactionType,
     create_portfolio,
     import_opening_positions,
     load_portfolio,
     load_strategy,
     load_transactions,
 )
+from py_fund_manager.schemas import Portfolio, Transaction, TransactionType
 
 
 class TestPortfolioStorage(unittest.TestCase):
@@ -69,6 +67,20 @@ allocation:
             path.write_text(path.read_text().replace('0.400000', '0.300000'))
             with self.assertRaisesRegex(ValueError, 'weights must total 1.0'):
                 load_strategy(path)
+
+    def test_generated_sp500_strategy_is_complete(self) -> None:
+        """Validate the committed direct-replication allocation."""
+        strategy_path = (
+            Path(__file__).parents[1]
+            / 'sample-data/strategies/SnP500-direct/strategy.yaml'
+        )
+        strategy = load_strategy(strategy_path)
+
+        self.assertEqual(strategy.id, 'SnP500-direct')
+        self.assertEqual(len(strategy.target_weights), 503)
+        self.assertEqual(sum(strategy.target_weights.values()), Decimal(1))
+        self.assertNotIn('SPY', strategy.target_weights)
+        self.assertNotIn('2602335D', strategy.target_weights)
 
     def test_load_transactions_supports_opening_positions(self) -> None:
         """Load a broker baseline without losing exact cost-basis values."""

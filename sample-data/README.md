@@ -1,7 +1,8 @@
 # Sample Data Root
 
-This directory is an explicit, fictional data root that follows the storage
-contract in [docs/README.md](../docs/README.md):
+This directory is an explicit, fictional data root. The authoritative layout is
+defined in
+[Directories and data roots](../docs/README.md#directories-and-data-roots):
 
 ```text
 sample-data/
@@ -9,10 +10,10 @@ sample-data/
 │   └── sample/
 └── strategies/
     ├── two-stock-example/
-    └── SnP500/
+    └── SnP500-direct/
 ```
 
-Never replace the fictional values with broker exports or actual account
+Do NOT replace the fictional values with broker exports or actual account
 identifiers.
 
 The sample per-user configuration in

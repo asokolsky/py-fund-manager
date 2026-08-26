@@ -23,6 +23,32 @@ only for generated historical-price data, where typed columns and analytical
 reads matter more than manual editing. Generated Parquet files are never account
 or transaction sources of truth.
 
+## Strategy history uses YAML
+
+Strategy assignments are infrequent, human-reviewed configuration events with
+nested strategy identity, revision, and optional rationale. They are stored in a
+separate `strategy-history.yaml`, not forced into transaction-shaped CSV rows or
+mixed with stable account identity in `portfolio.yaml`.
+
+The assignment list is append-only in the domain model. Because it remains small,
+the application validates and atomically rewrites the complete YAML document when
+adding an assignment. Existing entries cannot be edited or removed through normal
+commands. A strategy change records intent only; it does not create transactions
+or automatically place or propose trades.
+
+`strategy-history.yaml` is the sole authority for effective strategy selection.
+The legacy `portfolio.yaml` strategy pointer will be migrated into an initial
+assignment and removed rather than retained as a second source of truth.
+
+## Strategy revisions are immutable
+
+A stable strategy ID may acquire new constituents and weights. Each assignment
+therefore records both the ID and a SHA-256 revision derived from canonical
+validated content. Content-addressed revision snapshots remain available after the
+editable strategy definition changes. Order plans record the assignment and
+revision they used, preserving reproducibility without treating strategy intent as
+broker activity.
+
 ## Decimal values preserve financial precision
 
 Quantities, prices, amounts, fees, cost basis, and strategy weights use Python
@@ -34,7 +60,7 @@ basis points for small positions.
 ## Pydantic models are the schema authority
 
 `Portfolio`, `Transaction`, `Strategy`, and `TargetAllocation` in
-`py_fund_manager/portfolio.py` are frozen Pydantic models. Persisted-document
+`py_fund_manager/schemas.py` are frozen Pydantic models. Persisted-document
 loaders reject unknown fields, unsupported YAML schema versions, invalid
 identifiers and tickers, naive timestamps, invalid decimal values, and
 transaction shapes missing required security fields. Examples in the storage

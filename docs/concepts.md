@@ -60,6 +60,21 @@ proposed **order plan** for contribution, withdrawal, or rebalancing. The plan i
 advice; its orders become ledger transactions only after broker execution is
 confirmed.
 
+A **strategy assignment** associates a portfolio with one immutable revision of a
+strategy from an effective time. It records investment intent, not broker activity,
+so it is not a transaction. Changing an assignment does not change holdings or
+cash and does not generate orders automatically.
+
+For a requested time, the active assignment is the assignment with the latest
+effective time that is not later than the requested time. This permits historical
+valuation and order plans to identify the exact allocation that governed the
+portfolio. An order plan records both the assignment ID and strategy revision used
+to produce it.
+
+A strategy ID identifies the continuing allocation policy. A **strategy revision**
+identifies exact strategy content. Revisions are immutable because constituents
+and weights may change while the strategy ID remains stable.
+
 “Strategy” is the chosen term for allocation rules. “Fund” can refer to a pooled
 legal vehicle and is too ambiguous here, although it remains in legacy material
 and planned CLI examples.
@@ -83,7 +98,8 @@ opening boundary + confirmed transactions
                  ▼
         derived portfolio state ──┬── market prices ──► valuation/performance
                                   │
-strategy targets + market prices ─┴──────────────────► proposed order plan
+effective strategy assignment ───┐
+strategy revision + market prices ┴──────────────────► proposed order plan
                                                                │
                                                     confirmed execution
                                                                │

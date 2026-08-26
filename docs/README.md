@@ -20,6 +20,7 @@ DATA_ROOT/
 ├── portfolios/
 │   └── etrade-roth-ira/
 │       ├── portfolio.yaml
+│       ├── strategy-history.yaml
 │       ├── transactions.csv
 │       └── imports/
 │           └── stocks.csv
@@ -45,6 +46,7 @@ PersonalProjects/
     ├── portfolios/
     │   └── etrade-roth-ira/
     │       ├── portfolio.yaml
+    │       ├── strategy-history.yaml
     │       ├── transactions.csv
     │       └── imports/
     │           └── stocks.csv
@@ -56,8 +58,9 @@ recording its location in this repo.
 
 The CLI creates `portfolios/` below the selected root. The `strategies/` hierarchy
 is the approved design, but strategy management commands are not implemented yet.
-The [`sample-data/strategies/SnP500/`](../sample-data/strategies/SnP500/README.md)
-directory predates the validated strategy schema and is documented separately.
+The generated
+[`sample-data/strategies/SnP500-direct/`](../sample-data/strategies/SnP500-direct/README.md)
+strategy is documented separately.
 
 ## Portfolio schema
 
@@ -75,12 +78,17 @@ base_currency: USD
 The current creation command derives `broker` from the first segment of the
 portfolio ID and uses the ID for both `name` and the local `account_id`. These are
 safe bootstrap defaults, not claims about the broker's displayed account name or
-account number. Optional model fields are:
+account number. The optional model field is:
 
 ```yaml
-strategy: two-stock-example
 opened_on: 2020-04-15
 ```
+
+The implemented schema still accepts the legacy `strategy` field. It is a
+temporary bootstrap pointer until strategy-history support is implemented. The
+approved contract uses `strategy-history.yaml` as the sole authority for strategy
+selection; normal commands must not maintain both fields. Migration will convert
+an existing pointer into the first assignment and remove it from `portfolio.yaml`.
 
 Portfolio IDs use lowercase kebab-case. Currency is normalized to a three-character
 uppercase code. Unknown fields and any `schema_version` other than `1` are
@@ -162,7 +170,69 @@ Strategy tickers are normalized to uppercase. Positions must be nonempty, weight
 must be nonnegative, and the validated total must equal `1.0` within the documented
 tolerance.
 
+## Strategy revision storage
+
+A strategy ID may have multiple immutable revisions as its constituents or weights
+change. The planned layout stores content-addressed snapshots beside the editable
+strategy definition:
+
+```text
+strategies/SnP500-direct/
+├── strategy.yaml
+└── revisions/
+    └── sha256-<64-lowercase-hex-digits>.yaml
+```
+
+The revision is the SHA-256 digest of the canonical validated strategy content,
+not of incidental YAML formatting. Canonicalization serializes the complete
+Pydantic model in JSON mode with aliases, explicit null values, lexicographically
+sorted object keys, compact separators, UTF-8 encoding, and no trailing newline.
+Decimal values therefore remain JSON strings. Creating an assignment snapshots
+that content if the revision is not already present. A revision file is never
+replaced. This makes historical assignments reproducible after `strategy.yaml`
+changes.
+
+## Strategy history schema
+
+`strategy-history.yaml` records the portfolio's effective-dated strategy
+assignments:
+
+```yaml
+schema_version: 1
+assignments:
+  - id: initial-strategy
+    effective_at: 2026-01-01T00:00:00Z
+    strategy:
+      id: two-stock-example
+      revision: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    reason: Initial portfolio strategy
+  - id: adopt-sp500-direct
+    effective_at: 2026-08-26T12:00:00Z
+    strategy:
+      id: SnP500-direct
+      revision: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    reason: Move to direct S&P 500 replication
+```
+
+The persisted revision value uses `sha256:` followed by 64 lowercase hexadecimal
+digits. Assignment IDs must be unique and nonempty. Effective times must include a
+UTC offset, appear in strictly increasing chronological order, and cannot be
+shared by multiple assignments. Reasons are optional nonempty text.
+
+Each strategy ID and revision must resolve to validated immutable strategy content.
+Existing assignments cannot be edited or removed through normal commands. The
+application adds an assignment by validating the entire existing document,
+appending one entry, and atomically replacing the YAML file. Append-only is a
+domain rule; it does not require byte-wise file appends.
+
+For a requested time, the active assignment is the last assignment whose
+`effective_at` is not later than that time. Rebalancing fails if there is no such
+assignment, the referenced strategy or revision is unavailable, or the history is
+ambiguous. Recording a new assignment neither rebalances the portfolio nor writes
+financial transactions.
+
 ## CLI usage
 
-See the [portfolio CLI guide](cli-portfolio.md). General invocation and data-root
-selection are documented in the [CLI overview](cli.md).
+See the [portfolio CLI guide](cli-portfolio.md) and the planned [strategy CLI
+guide](cli-strategy.md). General invocation and data-root selection are documented
+in the [CLI overview](cli.md).

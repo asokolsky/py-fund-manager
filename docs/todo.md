@@ -19,8 +19,19 @@ unimplemented. Items stay here until they are addressed.
 - **TODO: Derived state and analytics.** Calculate holdings, cash, portfolio value,
   annualized and benchmark-relative performance, holding-period results, and
   realized gains or losses.
-- **TODO: Strategy operations.** Implement strategy persistence and contribution,
-  withdrawal, and rebalance order planning.
+- **TODO: Strategy history schemas.** Add Pydantic models for effective-dated
+  strategy assignments, histories, and revision references using the documented
+  `strategy-history.yaml` contract.
+- **TODO: Strategy revisions.** Canonicalize validated strategy content, calculate
+  its SHA-256 revision, and create immutable content-addressed snapshots.
+- **TODO: Strategy assignment operations.** Load and atomically update append-only
+  strategy history, resolve the assignment effective at a requested time, and add
+  show, history, and set commands.
+- **TODO: Legacy strategy migration.** Convert the optional `portfolio.yaml`
+  strategy pointer into an initial assignment, remove the pointer, and update the
+  sample portfolio after the history schema is implemented.
+- **TODO: Rebalance planning.** Produce contribution, withdrawal, and rebalance
+  order plans using the effective assignment and immutable strategy revision.
 - **TODO: Terminal UI.** Browse portfolios through a terminal interface.
 
 ## Supporting design and validation
@@ -30,15 +41,14 @@ unimplemented. Items stay here until they are addressed.
   cross-row consistency.
 - **TODO: Portfolio metadata.** Add creation options or an edit command for
   display name, broker, redacted account identifier, base currency, opening
-  date, and strategy selection.
+  and opening date. Strategy selection belongs to strategy history.
 - **TODO: Private-data hardening.** Define backup, encryption, and secret-scanning
   policies for the separate private data root documented in the
   [sample portfolio guide](../sample-data/portfolios/README.md).
 
-## Legacy S&P 500 reference migration
+## S&P 500 source maintenance
 
-- **TODO: Strategy migration.** Replace legacy `index.yaml` with a validated
-  `strategy.yaml` only after deciding whether SPY holdings are an acceptable
-  proxy for S&P 500 target weights.
-- **TODO: Refresh provenance.** Define how holdings are downloaded, dated,
-  normalized, licensed, and regenerated without manually editing strategy data.
+- **TODO: Source acquisition and licensing.** Automate acquisition of dated SPY
+  holdings and confirm the terms for retaining and transforming the source. The
+  checked-in generator already handles normalization and deterministic strategy
+  regeneration.
