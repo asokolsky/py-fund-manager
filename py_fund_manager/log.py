@@ -24,9 +24,7 @@ def setup_logging(
     Setup the logger `logger_name`
     """
     logging.basicConfig(
-        filename='main.log',
-        encoding='utf-8',
-        filemode='a',  # 'w'
+        stream=sys.stderr,
         datefmt='%H:%M:%S',
         format='{asctime} {name} {levelname} {message}',
         style='{',

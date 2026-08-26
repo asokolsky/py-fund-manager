@@ -1,0 +1,4 @@
+# Copy this file to ~/.config/py-fund-manager/config.toml.
+
+[data]
+root = "~/PersonalProjects/py-fund-manager/sample-data"

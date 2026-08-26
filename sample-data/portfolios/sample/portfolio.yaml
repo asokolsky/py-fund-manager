@@ -1,0 +1,8 @@
+schema_version: 1
+id: sample-portfolio
+name: Fictional Sample Portfolio
+broker: example
+account_id: sample-account
+base_currency: USD
+strategy: two-stock-example
+opened_on: 2026-01-01

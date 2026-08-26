@@ -1,0 +1,7 @@
+*
+!.gitignore
+!README.md
+!SnP500/
+!SnP500/**
+!two-stock-example/
+!two-stock-example/**

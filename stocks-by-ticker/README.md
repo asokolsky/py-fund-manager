@@ -4,6 +4,10 @@ This directory stores hourly, daily, or weekly historical stock prices. Each
 interval and ticker has its own directory, with its history split into one
 Parquet file per calendar year.
 
+This market-price cache is independent of portfolio account data. Portfolio
+metadata and transaction ledgers follow [the portfolio storage contract](../docs/README.md);
+they must not be placed in this generated directory.
+
 Use this layout when analysis focuses on one stock at a time, such as training a
 model per ticker or calculating technical indicators like MACD and RSI. A layout
 partitioned by date first is more efficient for portfolio-wide queries across
@@ -30,36 +34,10 @@ Ticker symbols must be normalized to uppercase.
 
 ## Creating files
 
-Run the downloader from the repository root. It creates the interval, ticker,
-and year directories automatically; do not create or edit Parquet files by hand.
-
-Download daily data for several tickers and years:
-
-```shell
-mise run py-fund-manager -- download 2024-2025 --tickers=AAPL,MSFT
-```
-
-Download weekly or hourly data by selecting an interval:
-
-```shell
-mise run py-fund-manager -- download 2020 --tickers=MSFT --interval=1w
-mise run py-fund-manager -- download 2026 --tickers=AAPL --interval=1h
-```
-
-Use `@` to load one ticker per line from a UTF-8 file:
-
-```shell
-mise run py-fund-manager -- download 2025 --tickers=@../pytickrs/tickers.txt
-```
-
-Ticker files may contain blank lines and comment lines beginning with `#`.
-Symbols are normalized to uppercase, duplicates are removed, and download order
-is unspecified. Relative ticker file paths are resolved from the directory where
-the command is run.
-
-The interval defaults to `1d`. Supported values are `1h`, `1d`, and `1w`; run
-`mise run py-fund-manager -- download -h` for command help. Yahoo Finance only
-provides hourly history for approximately the most recent 730 days.
+The downloader creates interval, ticker, and year directories automatically; do
+not create or edit Parquet files by hand. See the [download CLI
+guide](../docs/cli-download.md) for command syntax, ticker-file input, intervals,
+and examples.
 
 The downloader processes as many as six tickers concurrently. Each successful
 result is written atomically to
