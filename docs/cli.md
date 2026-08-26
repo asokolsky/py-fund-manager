@@ -11,8 +11,7 @@ Available commands:
 - [`portfolio`](cli-portfolio.md) creates portfolio metadata and can bootstrap
   opening positions.
 - [`download`](cli-download.md) downloads historical market prices.
-
-[`strategy`](cli-strategy.md) portfolio operations inspect and change the
+- [`strategy`](cli-strategy.md) portfolio operations inspect and change the
 effective strategy assignment.
 
 Use `mise run py-fund-manager -- --help` for the current command list.
