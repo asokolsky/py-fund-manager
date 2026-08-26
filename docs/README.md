@@ -56,8 +56,8 @@ PersonalProjects/
 Each user can configure the private checkout wherever appropriate without
 recording its location in this repo.
 
-The CLI creates `portfolios/` below the selected root. The `strategies/` hierarchy
-is the approved design, but strategy management commands are not implemented yet.
+The CLI creates `portfolios/` below the selected root. Strategy commands use the
+`strategies/` hierarchy and portfolio strategy history.
 The generated
 [`sample-data/strategies/SnP500-direct/`](../sample-data/strategies/SnP500-direct/README.md)
 strategy is documented separately.
@@ -84,11 +84,8 @@ account number. The optional model field is:
 opened_on: 2020-04-15
 ```
 
-The implemented schema still accepts the legacy `strategy` field. It is a
-temporary bootstrap pointer until strategy-history support is implemented. The
-approved contract uses `strategy-history.yaml` as the sole authority for strategy
-selection; normal commands must not maintain both fields. Migration will convert
-an existing pointer into the first assignment and remove it from `portfolio.yaml`.
+Strategy selection does not belong in `portfolio.yaml`.
+`strategy-history.yaml` is its sole authority.
 
 Portfolio IDs use lowercase kebab-case. Currency is normalized to a three-character
 uppercase code. Unknown fields and any `schema_version` other than `1` are
@@ -173,7 +170,7 @@ tolerance.
 ## Strategy revision storage
 
 A strategy ID may have multiple immutable revisions as its constituents or weights
-change. The planned layout stores content-addressed snapshots beside the editable
+change. The layout stores content-addressed snapshots beside the editable
 strategy definition:
 
 ```text
@@ -233,6 +230,6 @@ financial transactions.
 
 ## CLI usage
 
-See the [portfolio CLI guide](cli-portfolio.md) and the planned [strategy CLI
+See the [portfolio CLI guide](cli-portfolio.md) and the [strategy CLI
 guide](cli-strategy.md). General invocation and data-root selection are documented
 in the [CLI overview](cli.md).

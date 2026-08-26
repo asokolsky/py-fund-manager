@@ -8,6 +8,7 @@ downloading historical market prices.
 - Create a portfolio with validated YAML metadata.
 - Bootstrap opening positions from a canonical holdings CSV.
 - Store positions in a validated, append-oriented transaction ledger.
+- Assign effective-dated strategies with immutable content revisions.
 - Download Yahoo Finance prices into atomic, year-partitioned Parquet files.
 
 See [planned work](docs/todo.md) for capabilities that are not implemented yet.

@@ -12,8 +12,8 @@ Available commands:
   opening positions.
 - [`download`](cli-download.md) downloads historical market prices.
 
-The planned [`strategy`](cli-strategy.md) portfolio operations are documented as a
-contract but are not implemented.
+[`strategy`](cli-strategy.md) portfolio operations inspect and change the
+effective strategy assignment.
 
 Use `mise run py-fund-manager -- --help` for the current command list.
 

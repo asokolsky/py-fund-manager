@@ -37,8 +37,8 @@ commands. A strategy change records intent only; it does not create transactions
 or automatically place or propose trades.
 
 `strategy-history.yaml` is the sole authority for effective strategy selection.
-The legacy `portfolio.yaml` strategy pointer will be migrated into an initial
-assignment and removed rather than retained as a second source of truth.
+`portfolio.yaml` does not duplicate the current strategy as a second source of
+truth.
 
 ## Strategy revisions are immutable
 

@@ -32,7 +32,6 @@ name: E*TRADE Roth IRA
 broker: etrade
 account_id: "...1234"
 base_currency: usd
-strategy: sp500
 opened_on: 2020-04-15
 """,
                 encoding='utf-8',
@@ -41,7 +40,6 @@ opened_on: 2020-04-15
 
         self.assertEqual(portfolio.id, 'etrade-roth-ira')
         self.assertEqual(portfolio.base_currency, 'USD')
-        self.assertEqual(portfolio.strategy_id, 'sp500')
         self.assertEqual(portfolio.opened_on, date(2020, 4, 15))
 
     def test_load_strategy_requires_weights_to_total_one(self) -> None:
@@ -125,6 +123,20 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
                     'account_id': 'local-account',
                     'base_currency': 'USD',
                     'curreny': 'USD',
+                }
+            )
+
+    def test_portfolio_rejects_strategy_pointer(self) -> None:
+        """Keep effective strategy selection solely in strategy history."""
+        with self.assertRaises(ValidationError):
+            Portfolio.model_validate(
+                {
+                    'id': 'etrade-roth-ira',
+                    'name': 'Roth IRA',
+                    'broker': 'etrade',
+                    'account_id': 'local-account',
+                    'base_currency': 'USD',
+                    'strategy': 'SnP500-direct',
                 }
             )
 

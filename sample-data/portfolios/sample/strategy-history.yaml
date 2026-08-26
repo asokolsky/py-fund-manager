@@ -1,0 +1,8 @@
+schema_version: 1
+assignments:
+  - id: initial-strategy
+    effective_at: 2026-01-01T00:00:00Z
+    strategy:
+      id: two-stock-example
+      revision: sha256:f67ee2780d4a3d85a02a39b3463e72f7a4b79b40e55835551beefacc81a6327e
+    reason: Initial fictional strategy

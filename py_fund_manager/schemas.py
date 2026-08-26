@@ -6,6 +6,7 @@ import re
 from datetime import date, datetime  # noqa: TC003 - Pydantic resolves these at runtime.
 from decimal import Decimal
 from enum import StrEnum
+from itertools import pairwise
 from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -13,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 WEIGHT_TOLERANCE = Decimal('0.000001')
 PORTFOLIO_ID_PATTERN = re.compile(r'^[a-z0-9]+(?:-[a-z0-9]+)*$')
 TICKER_PATTERN = re.compile(r'^[A-Z0-9][A-Z0-9.^=-]*$')
+REVISION_PATTERN = re.compile(r'^sha256:[0-9a-f]{64}$')
 
 
 class TransactionType(StrEnum):
@@ -49,7 +51,6 @@ class Portfolio(BaseModel):
     broker: str = Field(min_length=1)
     account_id: str = Field(min_length=1)
     base_currency: str = Field(min_length=3, max_length=3)
-    strategy_id: str | None = Field(default=None, alias='strategy')
     opened_on: date | None = None
 
     @field_validator('base_currency', mode='before')
@@ -176,3 +177,57 @@ class Strategy(BaseModel):
     def target_weights(self) -> dict[str, Decimal]:
         """Expose target weights directly for allocation calculations."""
         return self.allocation.positions
+
+
+class StrategyRevisionReference(BaseModel):
+    """Identity of one immutable strategy revision."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True, str_strip_whitespace=True)
+
+    id: str = Field(min_length=1)
+    revision: str = Field(pattern=REVISION_PATTERN)
+
+
+class StrategyAssignment(BaseModel):
+    """Effective-dated association between a portfolio and strategy revision."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True, str_strip_whitespace=True)
+
+    id: str = Field(min_length=1)
+    effective_at: datetime
+    strategy: StrategyRevisionReference
+    reason: str | None = Field(default=None, min_length=1)
+
+    @field_validator('effective_at')
+    @classmethod
+    def validate_effective_at(cls, value: datetime) -> datetime:
+        """Require an unambiguous assignment effective time."""
+        if value.tzinfo is None:
+            msg = 'effective_at must include a UTC offset'
+            raise ValueError(msg)
+        return value
+
+
+class StrategyHistory(BaseModel):
+    """Ordered append-only strategy assignments for one portfolio."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True)
+
+    schema_version: Literal[1] = 1
+    assignments: tuple[StrategyAssignment, ...] = Field(min_length=1)
+
+    @field_validator('assignments')
+    @classmethod
+    def validate_assignments(
+        cls, value: tuple[StrategyAssignment, ...]
+    ) -> tuple[StrategyAssignment, ...]:
+        """Require unique identities and strictly increasing effective times."""
+        ids = [assignment.id for assignment in value]
+        if len(ids) != len(set(ids)):
+            msg = 'strategy assignment IDs must be unique'
+            raise ValueError(msg)
+        effective_times = [assignment.effective_at for assignment in value]
+        if any(current <= previous for previous, current in pairwise(effective_times)):
+            msg = 'strategy assignments must have increasing effective times'
+            raise ValueError(msg)
+        return value

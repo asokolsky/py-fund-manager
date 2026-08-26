@@ -5,10 +5,12 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from datetime import UTC, datetime
 from unittest.mock import patch
 
 from py_fund_manager import __main__ as cli
 from py_fund_manager.download import Interval
+from py_fund_manager.schemas import StrategyAssignment, StrategyRevisionReference
 
 
 class TestCLI(unittest.TestCase):
@@ -105,6 +107,49 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(result, 0)
         create_mock.assert_called_once_with(data_directory, 'etrade-alex-roth-ira')
         import_mock.assert_called_once_with(portfolio_directory, cli.Path('stocks.csv'))
+
+    def test_set_portfolio_strategy(self) -> None:
+        """Parse and dispatch an effective-dated strategy assignment."""
+        effective_at = datetime(2026, 9, 1, tzinfo=UTC)
+        assignment = StrategyAssignment(
+            id='assignment-test',
+            effective_at=effective_at,
+            strategy=StrategyRevisionReference(
+                id='SnP500-direct', revision=f'sha256:{"a" * 64}'
+            ),
+            reason='Adopt direct replication',
+        )
+        arguments = [
+            cli.CLI_NAME,
+            'portfolio',
+            'etrade-alex-roth-ira',
+            'strategy',
+            'set',
+            'SnP500-direct',
+            '--effective-at',
+            '2026-09-01T00:00:00Z',
+            '--reason',
+            'Adopt direct replication',
+        ]
+        data_directory = cli.Path('test-data')
+        with (
+            patch.object(sys, 'argv', arguments),
+            patch.object(cli, 'data_directory', return_value=data_directory),
+            patch.object(
+                cli, 'assign_strategy', return_value=assignment
+            ) as assign_mock,
+            redirect_stdout(io.StringIO()),
+        ):
+            result = cli.main()
+
+        self.assertEqual(result, 0)
+        assign_mock.assert_called_once_with(
+            data_directory,
+            'etrade-alex-roth-ira',
+            'SnP500-direct',
+            effective_at,
+            'Adopt direct replication',
+        )
 
 
 if __name__ == '__main__':

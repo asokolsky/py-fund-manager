@@ -9,6 +9,8 @@ This directory contains fictional portfolios within the explicit
 [`sample/`](sample/) contains:
 
 - `portfolio.yaml`: validated account metadata using fictional identifiers.
+- `strategy-history.yaml`: an effective-dated assignment to an immutable revision
+  of the fictional two-stock strategy.
 - `transactions.csv`: two opening positions with fixed example timestamps.
 - `imports/stocks.csv`: the canonical holdings input represented by those opening
   transactions.

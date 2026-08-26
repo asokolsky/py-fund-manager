@@ -38,6 +38,8 @@ mise exec -- uv run -m unittest -v \
 - `main_test.py` covers CLI parsing and dispatch.
 - `portfolio_test.py` covers portfolio, transaction, strategy, and import
   validation.
+- `strategy_test.py` covers immutable strategy revisions and effective assignment
+  history.
 
 Regular tests must not make live Yahoo Finance requests. Explicit end-to-end
 checks should write into a temporary directory and remove their downloaded data
