@@ -166,7 +166,7 @@ class TestCLI(unittest.TestCase):
         ]
         data_directory = cli.Path('test-data')
         plan = Mock()
-        plan.model_dump_json.return_value = '{"schema_version":1}'
+        plan.model_dump_json.return_value = '{"schema_version":2}'
         stdout = io.StringIO()
         with (
             patch.object(sys, 'argv', arguments),
@@ -186,7 +186,51 @@ class TestCLI(unittest.TestCase):
             contribution=Decimal('10000.00'),
             withdrawal=Decimal(0),
         )
-        self.assertEqual(stdout.getvalue(), '{"schema_version":1}\n')
+        self.assertEqual(stdout.getvalue(), '{"schema_version":2}\n')
+
+    def test_rebalance_portfolio_with_withdrawal(self) -> None:
+        """Parse a withdrawal and pass it to rebalance planning."""
+        arguments = [
+            cli.CLI_NAME,
+            'portfolio',
+            'etrade-brokerage',
+            'rebalance',
+            '--withdraw',
+            '5000.00',
+            '--as-of',
+            '2026-08-26T12:00:00Z',
+        ]
+        data_directory = cli.Path('test-data')
+        plan = Mock()
+        plan.model_dump_json.return_value = '{"schema_version":2}'
+        with (
+            patch.object(sys, 'argv', arguments),
+            patch.object(cli, 'data_directory', return_value=data_directory),
+            patch.object(
+                cli, 'rebalance_portfolio', return_value=plan
+            ) as rebalance_mock,
+            redirect_stdout(io.StringIO()),
+        ):
+            result = cli.main()
+
+        self.assertEqual(result, 0)
+        rebalance_mock.assert_called_once_with(
+            data_directory,
+            'etrade-brokerage',
+            datetime(2026, 8, 26, 12, tzinfo=UTC),
+            contribution=Decimal(0),
+            withdrawal=Decimal('5000.00'),
+        )
+
+    def test_removed_rebalance_option_names_are_rejected(self) -> None:
+        """Reject the superseded contribution and withdrawal option names."""
+        for option in ('--contribution', '--withdrawal'):
+            with (
+                self.subTest(option=option),
+                redirect_stderr(io.StringIO()),
+                self.assertRaises(SystemExit),
+            ):
+                cli._parse_portfolio_action(['rebalance', option, '100'])
 
 
 if __name__ == '__main__':

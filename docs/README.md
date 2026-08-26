@@ -241,16 +241,16 @@ The rebalance command emits a validated JSON document to standard output:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "portfolio_id": "etrade-brokerage",
   "strategy_assignment_id": "assignment-example",
   "strategy": {
     "id": "SnP500-direct",
     "revision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   },
-  "generated_at": "2026-08-26T12:00:01Z",
+  "generated_at": "2026-08-26T21:00:01Z",
   "valuation": {
-    "as_of": "2026-08-26T12:00:00Z",
+    "as_of": "2026-08-26T21:00:00Z",
     "currency": "USD",
     "holdings_value": "95000.00",
     "available_cash": "5000.00",
@@ -268,17 +268,20 @@ The rebalance command emits a validated JSON document to standard output:
       "target_value": "6735.80",
       "estimated_price": "220.00",
       "price_as_of": "2026-08-26",
+      "price_available_at": "2026-08-26T16:00:00-04:00",
+      "price_source": "Yahoo Finance via yfinance",
+      "price_source_partition": "interval=1d/ticker=AAPL/year=2026/data.parquet",
       "quantity": "20.617272",
-      "estimated_notional": "4535.80",
+      "estimated_notional": "4535.799840",
       "reason": "underweight"
     }
   ],
   "summary": {
     "buy_orders": 1,
     "sell_orders": 0,
-    "estimated_buys": "4535.80",
+    "estimated_buys": "4535.799840",
     "estimated_sells": "0.00",
-    "estimated_ending_cash": "10464.20"
+    "estimated_ending_cash": "10464.200160"
   },
   "warnings": []
 }
@@ -288,6 +291,14 @@ Decimal values serialize as JSON strings. Order sides are `buy` or `sell`; reaso
 are `underweight`, `overweight`, or `not_in_strategy`. The plan identifies the
 exact effective strategy assignment and immutable revision. It is not a broker
 order or an execution report and is never written to the transaction ledger.
+Rebalance plan schema version `2` requires exact execution arithmetic and price
+availability and source-provenance fields; consumers must reject unsupported plan
+versions.
+Each order carries the availability time, provider, and relative Parquet source
+partition for its price. Its estimated notional equals its rounded quantity times
+its estimated price exactly. Summary amounts reconcile to those order notionals,
+so `estimated_ending_cash` retains residual cash from fractional-quantity
+rounding.
 
 ## CLI usage
 

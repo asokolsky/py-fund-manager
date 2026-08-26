@@ -42,6 +42,10 @@ See [planned work](docs/todo.md) for capabilities that are not implemented yet.
 
 ## Per-user configuration
 
+Personal portfolio data does not belong in this public repo. Store private
+portfolios and strategies in a separate private repo, then point the global
+configuration to its local checkout.
+
 [`docs/config.toml.example`](docs/config.toml.example) is a sample global
 configuration. Copy it to `~/.config/py-fund-manager/config.toml` and update
 `data.root` to select the directory containing private `portfolios/` and

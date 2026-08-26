@@ -92,5 +92,8 @@ and do not need to be duplicated in each Parquet row.
 - Dataset metadata or an accompanying manifest must record the data source,
   retrieval time in UTC, exchange time zone, trading currency, and bar interval
   (`1h`, `1d`, or `1w`).
+- Rebalance planning treats a daily close as available at 16:00 in the recorded
+  exchange timezone. The price, date, currency, source, and partition remain one
+  observation; metadata from another partition cannot qualify the selected row.
 - Refreshes replace the affected yearly file atomically after validating its
   schema, uniqueness, ordering, and partition year.

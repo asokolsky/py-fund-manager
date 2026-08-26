@@ -57,6 +57,22 @@ quoted decimal fractions. They must be nonnegative and total `1.0` within a
 `0.000001` tolerance. This retains more precision than integer thousandths or
 basis points for small positions.
 
+Rebalance buys are rounded down to the supported quantity increment to prevent
+overspending. Sells are rounded up and capped at the current holding so a planned
+withdrawal is fully funded without selling shares the portfolio does not own.
+Estimated notionals are calculated afterward. Order notionals and summary cash
+therefore retain the Decimal precision needed to satisfy `quantity × price`
+exactly instead of hiding fractional residual cash behind cent rounding.
+
+## Daily closes require coherent provenance and an availability time
+
+A rebalance price is selected together with its trading date, currency, provider,
+exchange timezone, and relative Parquet partition. Daily bars have no intraday
+timestamp, so the planner treats a close as available from 16:00 in the recorded
+exchange timezone. This conservative boundary prevents a same-day close from
+being used before the regular session has ended. Missing provenance metadata and
+conflicting latest observations are validation failures.
+
 ## Pydantic models are the schema authority
 
 All persisted inputs and structured outputs are defined as frozen Pydantic models

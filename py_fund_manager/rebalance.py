@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
-from decimal import ROUND_DOWN, Decimal
+from datetime import UTC, date, datetime, time
+from decimal import ROUND_CEILING, ROUND_DOWN, Decimal
 from pathlib import Path  # noqa: TC003 - used by runtime-configurable storage paths.
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import pyarrow.parquet as pq
 
@@ -36,6 +37,7 @@ from py_fund_manager.strategy import (
 
 CENT = Decimal('0.01')
 QUANTITY_INCREMENT = Decimal('0.000001')
+DAILY_CLOSE_TIME = time(16)
 
 
 def derive_portfolio_state(
@@ -113,11 +115,8 @@ def load_latest_daily_prices(
 ) -> dict[str, PriceObservation]:
     """Load the latest unadjusted daily close at or before a planning time."""
     observations: dict[str, PriceObservation] = {}
-    requested_date = as_of.date()
     for ticker in sorted(tickers):
-        latest_date: date | None = None
-        latest_price: Decimal | None = None
-        latest_currency = currency
+        candidates: list[PriceObservation] = []
         price_tickers = [ticker]
         yahoo_ticker = ticker.replace('.', '-')
         if yahoo_ticker != ticker:
@@ -126,33 +125,64 @@ def load_latest_daily_prices(
             ticker_directory = (
                 stocks_directory / 'interval=1d' / f'ticker={price_ticker}'
             )
-            for path in ticker_directory.glob('year=*/data.parquet'):
+            for path in sorted(ticker_directory.glob('year=*/data.parquet')):
                 parquet = pq.ParquetFile(path)
                 metadata = parquet.schema_arrow.metadata or {}
-                stored_currency = metadata.get(b'currency', b'').decode()
-                if stored_currency:
-                    latest_currency = stored_currency.upper()
+                stored_currency = _required_metadata(
+                    metadata, b'currency', path
+                ).upper()
+                source = _required_metadata(metadata, b'source', path)
+                exchange_timezone = _required_metadata(
+                    metadata, b'exchange_timezone', path
+                )
                 table = parquet.read(columns=['date', 'close'])
                 dates = table.column('date').to_pylist()
                 closes = table.column('close').to_pylist()
                 for price_date, close in zip(dates, closes, strict=True):
-                    if price_date > requested_date or close is None:
+                    if close is None:
                         continue
-                    if latest_date is None or price_date > latest_date:
-                        latest_date = price_date
-                        latest_price = Decimal(str(close))
-        if latest_date is None or latest_price is None:
-            msg = f'no daily price for {ticker} at or before {requested_date}'
+                    available_at = _daily_close_available_at(
+                        price_date, exchange_timezone, path
+                    )
+                    if available_at > as_of:
+                        continue
+                    candidates.append(
+                        PriceObservation(
+                            ticker=ticker,
+                            as_of=price_date,
+                            available_at=available_at,
+                            price=Decimal(str(close)),
+                            currency=stored_currency,
+                            source=source,
+                            source_partition=path.relative_to(
+                                stocks_directory
+                            ).as_posix(),
+                        )
+                    )
+        if not candidates:
+            msg = f'no daily price for {ticker} available at {as_of.isoformat()}'
             raise ValueError(msg)
-        if latest_currency != currency:
-            msg = f'{ticker} price uses {latest_currency}; expected {currency}'
+        latest_available_at = max(candidate.available_at for candidate in candidates)
+        latest = [
+            candidate
+            for candidate in candidates
+            if candidate.available_at == latest_available_at
+        ]
+        distinct = {
+            (candidate.price, candidate.currency, candidate.source)
+            for candidate in latest
+        }
+        if len(distinct) != 1:
+            partitions = ', '.join(
+                sorted(candidate.source_partition for candidate in latest)
+            )
+            msg = f'conflicting latest daily prices for {ticker}: {partitions}'
             raise ValueError(msg)
-        observations[ticker] = PriceObservation(
-            ticker=ticker,
-            as_of=latest_date,
-            price=latest_price,
-            currency=latest_currency,
-        )
+        observation = min(latest, key=lambda candidate: candidate.source_partition)
+        if observation.currency != currency:
+            msg = f'{ticker} price uses {observation.currency}; expected {currency}'
+            raise ValueError(msg)
+        observations[ticker] = observation
     return observations
 
 
@@ -198,6 +228,9 @@ def plan_rebalance(
                 f'expected {portfolio.base_currency}'
             )
             raise ValueError(msg)
+        if observation.available_at > as_of:
+            msg = f'{ticker} price was not available at the planning time'
+            raise ValueError(msg)
 
     current_values = {
         ticker: quantity * prices[ticker].price
@@ -216,8 +249,8 @@ def plan_rebalance(
         target_weight = strategy.target_weights.get(ticker, Decimal(0))
         target_value = target_portfolio_value * target_weight
         difference = target_value - current_value
-        notional = abs(difference).quantize(CENT)
-        if notional < CENT:
+        target_notional = abs(difference)
+        if target_notional < CENT:
             continue
         side = OrderSide.BUY if difference > 0 else OrderSide.SELL
         reason = (
@@ -228,14 +261,20 @@ def plan_rebalance(
             else OrderReason.OVERWEIGHT
         )
         price = prices[ticker]
+        quantity_rounding = ROUND_DOWN if side == OrderSide.BUY else ROUND_CEILING
         quantity = (
             current_quantity
             if reason == OrderReason.NOT_IN_STRATEGY
-            else (notional / price.price).quantize(
-                QUANTITY_INCREMENT, rounding=ROUND_DOWN
+            else (target_notional / price.price).quantize(
+                QUANTITY_INCREMENT, rounding=quantity_rounding
             )
         )
+        if side == OrderSide.SELL:
+            quantity = min(quantity, current_quantity)
         if quantity <= 0:
+            continue
+        notional = quantity * price.price
+        if notional <= 0:
             continue
         orders.append(
             RebalanceOrder(
@@ -247,6 +286,9 @@ def plan_rebalance(
                 target_value=target_value.quantize(CENT),
                 estimated_price=price.price,
                 price_as_of=price.as_of,
+                price_available_at=price.available_at,
+                price_source=price.source,
+                price_source_partition=price.source_partition,
                 quantity=quantity,
                 estimated_notional=notional,
                 reason=reason,
@@ -280,11 +322,9 @@ def plan_rebalance(
         summary=RebalanceSummary(
             buy_orders=sum(order.side == OrderSide.BUY for order in orders),
             sell_orders=sum(order.side == OrderSide.SELL for order in orders),
-            estimated_buys=buys.quantize(CENT),
-            estimated_sells=sells.quantize(CENT),
-            estimated_ending_cash=(
-                cash + contribution - withdrawal + sells - buys
-            ).quantize(CENT),
+            estimated_buys=buys,
+            estimated_sells=sells,
+            estimated_ending_cash=(cash + contribution - withdrawal + sells - buys),
         ),
         warnings=warnings,
     )
@@ -336,6 +376,31 @@ def _change_position(
         msg = 'position-changing transaction requires ticker and quantity'
         raise ValueError(msg)
     positions[ticker] = positions.get(ticker, Decimal(0)) + quantity
+
+
+def _required_metadata(metadata: dict[bytes, bytes], key: bytes, path: Path) -> str:
+    """Read required nonempty UTF-8 metadata from one price partition."""
+    try:
+        value = metadata.get(key, b'').decode().strip()
+    except UnicodeError as error:
+        msg = f'{path}: metadata {key.decode()} must be UTF-8'
+        raise ValueError(msg) from error
+    if not value:
+        msg = f'{path}: missing required metadata {key.decode()}'
+        raise ValueError(msg)
+    return value
+
+
+def _daily_close_available_at(
+    price_date: date, exchange_timezone: str, path: Path
+) -> datetime:
+    """Return the documented availability boundary for one daily close."""
+    try:
+        timezone = ZoneInfo(exchange_timezone)
+    except ZoneInfoNotFoundError as error:
+        msg = f'{path}: unknown exchange timezone {exchange_timezone}'
+        raise ValueError(msg) from error
+    return datetime.combine(price_date, DAILY_CLOSE_TIME, tzinfo=timezone)
 
 
 def _required_quantity(transaction: Transaction) -> Decimal:

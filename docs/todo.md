@@ -5,6 +5,15 @@ unimplemented. Items stay here until they are addressed.
 
 ## Capability backlog
 
+- **TODO: Integrated rebalance price refresh.** Before planning, derive the union
+  of current and strategy tickers, refresh their current daily partitions with a
+  bounded worker pool, and preserve successful atomic writes across partial
+  failures. Use exchange calendars, exchange timezones, and a provider-publication
+  delay to identify the expected latest completed session. Fail on missing or
+  stale required observations by default; define an explicit
+  `--allow-stale-prices` review override. Keep download and rebalance logic in
+  shared application services. See the documented [price refresh
+  workflow](cli-portfolio.md#price-refresh-workflow).
 - **TODO: Broker activity and tax lots.** Define the canonical broker-activity
   schema and import trades, dividends, interest, fees, deposits, withdrawals,
   splits, transfers, and later holdings snapshots. Decide whether lot identity
@@ -27,24 +36,12 @@ unimplemented. Items stay here until they are addressed.
 
 ## Supporting design and validation
 
-- **TODO: Executable rebalance arithmetic.** Derive each estimated order notional
-  from its rounded quantity and estimated price, then calculate estimated ending
-  cash from those executable amounts. Preserve any residual cash rather than
-  reporting that rounding consumed it.
-- **TODO: Price-observation semantics.** Select price, observation time, currency,
-  and source partition as one consistent record. Define when a daily close becomes
-  eligible for an `as_of` time so a same-day close cannot be used before it exists.
 - **TODO: Rebalance controls.** Define minimum order amounts, weight-drift
   tolerances, configurable quantity increments, and a cash-flows-only mode that
   directs contributions toward underweight holdings without selling.
 - **TODO: Rebalance plan provenance.** Add a deterministic plan ID, ledger and
   price-input fingerprints, and an expiration time so changed inputs or stale
   valuations cannot be submitted accidentally.
-- **TODO: Rebalance invariants.** Test that quantity times price agrees with each
-  reported notional, ending cash reconciles exactly, sells do not exceed current
-  positions, withdrawals are fully funded, results do not depend on transaction
-  or Parquet partition order, `--withdraw` is covered through the CLI, and removed
-  option names are rejected.
 - **TODO: Ledger invariants.** Validate chronological ordering, unique
   `external_id` values where present, transaction-type-specific cash fields, and
   cross-row consistency.

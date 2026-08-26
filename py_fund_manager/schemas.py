@@ -234,20 +234,34 @@ class StrategyHistory(BaseModel):
 
 
 class PriceObservation(BaseModel):
-    """Latest market price available for one ticker at a planning time."""
+    """One market price and the partition metadata that qualifies its use."""
 
     model_config = ConfigDict(extra='forbid', frozen=True, str_strip_whitespace=True)
 
     ticker: str = Field(min_length=1)
     as_of: date
+    available_at: datetime
     price: Decimal = Field(gt=0)
     currency: str = Field(min_length=3, max_length=3)
+    source: str = Field(min_length=1)
+    source_partition: str = Field(min_length=1)
 
     @field_validator('ticker', 'currency', mode='before')
     @classmethod
     def normalize_price_code(cls, value: object) -> object:
         """Normalize ticker and currency codes in price observations."""
         return value.strip().upper() if isinstance(value, str) else value
+
+    @model_validator(mode='after')
+    def validate_availability(self) -> Self:
+        """Require an aware availability time on the observation date."""
+        if self.available_at.tzinfo is None:
+            msg = 'price available_at must include a UTC offset'
+            raise ValueError(msg)
+        if self.available_at.date() != self.as_of:
+            msg = 'price available_at must fall on the observation date'
+            raise ValueError(msg)
+        return self
 
 
 class OrderSide(StrEnum):
@@ -278,9 +292,29 @@ class RebalanceOrder(BaseModel):
     target_value: Decimal = Field(ge=0)
     estimated_price: Decimal = Field(gt=0)
     price_as_of: date
+    price_available_at: datetime
+    price_source: str = Field(min_length=1)
+    price_source_partition: str = Field(min_length=1)
     quantity: Decimal = Field(gt=0)
     estimated_notional: Decimal = Field(gt=0)
     reason: OrderReason
+
+    @model_validator(mode='after')
+    def validate_execution_estimate(self) -> Self:
+        """Require coherent price provenance and executable arithmetic."""
+        if self.price_available_at.tzinfo is None:
+            msg = 'price_available_at must include a UTC offset'
+            raise ValueError(msg)
+        if self.price_available_at.date() != self.price_as_of:
+            msg = 'price availability must fall on price_as_of'
+            raise ValueError(msg)
+        if self.estimated_notional != self.quantity * self.estimated_price:
+            msg = 'estimated_notional must equal quantity times estimated_price'
+            raise ValueError(msg)
+        if self.side == OrderSide.SELL and self.quantity > self.current_quantity:
+            msg = 'sell quantity must not exceed current quantity'
+            raise ValueError(msg)
+        return self
 
 
 class RebalanceValuation(BaseModel):
@@ -315,7 +349,7 @@ class RebalanceSummary(BaseModel):
     sell_orders: int = Field(ge=0)
     estimated_buys: Decimal = Field(ge=0)
     estimated_sells: Decimal = Field(ge=0)
-    estimated_ending_cash: Decimal
+    estimated_ending_cash: Decimal = Field(ge=0)
 
 
 class RebalancePlan(BaseModel):
@@ -323,7 +357,7 @@ class RebalancePlan(BaseModel):
 
     model_config = ConfigDict(extra='forbid', frozen=True)
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     portfolio_id: str = Field(min_length=1)
     strategy_assignment_id: str = Field(min_length=1)
     strategy: StrategyRevisionReference
@@ -341,3 +375,36 @@ class RebalancePlan(BaseModel):
             msg = 'generated_at must include a UTC offset'
             raise ValueError(msg)
         return value
+
+    @model_validator(mode='after')
+    def validate_summary(self) -> Self:
+        """Require summary counts and cash arithmetic to match the orders."""
+        buys = [order for order in self.orders if order.side == OrderSide.BUY]
+        sells = [order for order in self.orders if order.side == OrderSide.SELL]
+        estimated_buys = sum((order.estimated_notional for order in buys), Decimal(0))
+        estimated_sells = sum((order.estimated_notional for order in sells), Decimal(0))
+        expected_cash = (
+            self.valuation.available_cash
+            + self.valuation.contribution
+            - self.valuation.withdrawal
+            + estimated_sells
+            - estimated_buys
+        )
+        expected = (
+            len(buys),
+            len(sells),
+            estimated_buys,
+            estimated_sells,
+            expected_cash,
+        )
+        actual = (
+            self.summary.buy_orders,
+            self.summary.sell_orders,
+            self.summary.estimated_buys,
+            self.summary.estimated_sells,
+            self.summary.estimated_ending_cash,
+        )
+        if actual != expected:
+            msg = 'rebalance summary must reconcile exactly to its orders'
+            raise ValueError(msg)
+        return self
