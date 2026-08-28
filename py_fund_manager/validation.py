@@ -110,19 +110,28 @@ def _validate_portfolios(
         ]
         try:
             _require_at_most_one_history(directory, histories)
-            if histories:
-                history_path, history_manifest = histories[0]
+        except (OSError, TypeError, ValueError) as error:
+            errors.append(str(error))
+            continue
+        if histories:
+            history_path, history_manifest = histories[0]
+            try:
                 _require_expected_name(
                     history_path, history_manifest.metadata.name, directory.name
                 )
-                for assignment in history_manifest.spec.assignments:
+            except (OSError, TypeError, ValueError) as error:
+                errors.append(str(error))
+            for assignment in history_manifest.spec.assignments:
+                try:
                     load_strategy_revision(data_directory, assignment.strategy)
                     validated_revisions.add(
                         (assignment.strategy.name, assignment.strategy.revision)
                     )
-                history_count += 1
-        except (OSError, TypeError, ValueError) as error:
-            errors.append(str(error))
+                except (OSError, TypeError, ValueError) as error:
+                    errors.append(
+                        f'{history_path}: assignment {assignment.id!r}: {error}'
+                    )
+            history_count += 1
     return PortfolioValidationCounts(
         portfolio_count, history_count, frozenset(validated_revisions)
     )

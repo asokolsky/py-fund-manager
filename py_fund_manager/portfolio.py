@@ -278,7 +278,7 @@ def find_manifest_in(
             f'got {manifest.metadata.name!r}'
         )
         raise ValueError(msg)
-    return path, cast('Manifest', manifest)
+    return path, manifest
 
 
 def load_directory_manifests(directory: Path) -> list[tuple[Path, Manifest]]:

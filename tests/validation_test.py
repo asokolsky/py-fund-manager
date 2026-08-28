@@ -92,6 +92,11 @@ spec:
       strategy:
         name: missing
         revision: sha256:{'a' * 64}
+    - id: another-missing-revision
+      effective_at: 2026-02-01T00:00:00Z
+      strategy:
+        name: also-missing
+        revision: sha256:{'b' * 64}
 """,
                 encoding='utf-8',
             )
@@ -100,10 +105,13 @@ spec:
                 validate_data_root(root)
 
         messages = '\n'.join(context.exception.errors)
-        self.assertGreaterEqual(len(context.exception.errors), 3)
+        self.assertGreaterEqual(len(context.exception.errors), 4)
         self.assertIn("expected metadata.name 'sample', got 'wrong'", messages)
         self.assertIn('transactions.csv', messages)
+        self.assertIn("history.yaml: assignment 'missing-revision'", messages)
+        self.assertIn("history.yaml: assignment 'another-missing-revision'", messages)
         self.assertIn('strategy/missing/revisions', messages)
+        self.assertIn('strategy/also-missing/revisions', messages)
 
 
 if __name__ == '__main__':
