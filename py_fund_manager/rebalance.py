@@ -11,8 +11,8 @@ import pyarrow.parquet as pq
 
 from py_fund_manager.download import STOCKS_DIRECTORY
 from py_fund_manager.portfolio import (
-    find_manifest,
-    load_portfolio,
+    find_manifest_in,
+    load_directory_manifests,
     load_transactions,
 )
 from py_fund_manager.schemas import (
@@ -31,7 +31,6 @@ from py_fund_manager.schemas import (
 )
 from py_fund_manager.strategy import (
     effective_assignment,
-    load_strategy_history,
     load_strategy_revision,
     strategy_revision,
 )
@@ -342,15 +341,14 @@ def rebalance_portfolio(
 ) -> RebalancePlan:
     """Load all portfolio inputs and create its rebalance order plan."""
     portfolio_directory = data_directory / 'portfolio' / portfolio_id
-    portfolio_path, _ = find_manifest(
-        portfolio_directory, 'Portfolio', expected_name=portfolio_id
+    manifests = load_directory_manifests(portfolio_directory)
+    _, portfolio = find_manifest_in(
+        portfolio_directory, manifests, 'Portfolio', expected_name=portfolio_id
     )
-    portfolio = load_portfolio(portfolio_path)
     transactions = load_transactions(portfolio_directory / 'transactions.csv')
-    history_path, _ = find_manifest(
-        portfolio_directory, 'StrategyHistory', expected_name=portfolio_id
+    _, history = find_manifest_in(
+        portfolio_directory, manifests, 'StrategyHistory', expected_name=portfolio_id
     )
-    history = load_strategy_history(history_path)
     assignment = effective_assignment(history, as_of)
     strategy = load_strategy_revision(data_directory, assignment.strategy)
     positions, _ = derive_portfolio_state(portfolio, transactions, as_of)

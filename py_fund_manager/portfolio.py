@@ -8,7 +8,7 @@ import shutil
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal, cast, overload
 
 import yaml
 
@@ -182,13 +182,86 @@ def load_manifest(path: Path) -> Manifest:
     raise ValueError(msg)
 
 
+@overload
+def find_manifest(
+    directory: Path,
+    expected_kind: Literal['Portfolio'],
+    *,
+    expected_name: str | None = None,
+) -> tuple[Path, Portfolio]: ...
+
+
+@overload
+def find_manifest(
+    directory: Path,
+    expected_kind: Literal['Strategy'],
+    *,
+    expected_name: str | None = None,
+) -> tuple[Path, Strategy]: ...
+
+
+@overload
+def find_manifest(
+    directory: Path,
+    expected_kind: Literal['StrategyHistory'],
+    *,
+    expected_name: str | None = None,
+) -> tuple[Path, StrategyHistory]: ...
+
+
 def find_manifest(
     directory: Path, expected_kind: ManifestKind, *, expected_name: str | None = None
 ) -> tuple[Path, Manifest]:
     """Find exactly one top-level manifest of a requested kind in a directory."""
+    return find_manifest_in(
+        directory,
+        load_directory_manifests(directory),
+        expected_kind,
+        expected_name=expected_name,
+    )
+
+
+@overload
+def find_manifest_in(
+    directory: Path,
+    manifests: list[tuple[Path, Manifest]],
+    expected_kind: Literal['Portfolio'],
+    *,
+    expected_name: str | None = None,
+) -> tuple[Path, Portfolio]: ...
+
+
+@overload
+def find_manifest_in(
+    directory: Path,
+    manifests: list[tuple[Path, Manifest]],
+    expected_kind: Literal['Strategy'],
+    *,
+    expected_name: str | None = None,
+) -> tuple[Path, Strategy]: ...
+
+
+@overload
+def find_manifest_in(
+    directory: Path,
+    manifests: list[tuple[Path, Manifest]],
+    expected_kind: Literal['StrategyHistory'],
+    *,
+    expected_name: str | None = None,
+) -> tuple[Path, StrategyHistory]: ...
+
+
+def find_manifest_in(
+    directory: Path,
+    manifests: list[tuple[Path, Manifest]],
+    expected_kind: ManifestKind,
+    *,
+    expected_name: str | None = None,
+) -> tuple[Path, Manifest]:
+    """Find one requested kind among manifests already loaded from a directory."""
     matches = [
         (path, manifest)
-        for path, manifest in load_directory_manifests(directory)
+        for path, manifest in manifests
         if manifest.kind == expected_kind
     ]
     if not matches:
@@ -205,7 +278,7 @@ def find_manifest(
             f'got {manifest.metadata.name!r}'
         )
         raise ValueError(msg)
-    return path, manifest
+    return path, cast('Manifest', manifest)
 
 
 def load_directory_manifests(directory: Path) -> list[tuple[Path, Manifest]]:
@@ -224,7 +297,10 @@ def load_transactions(path: Path) -> list[Transaction]:
         for line_number, row in enumerate(csv.DictReader(ledger_file), start=2):
             context = Path(f'{path}:{line_number}')
             normalized = {key: value for key, value in row.items() if value != ''}
-            transaction = Transaction.model_validate(normalized)
+            try:
+                transaction = Transaction.model_validate(normalized)
+            except ValueError as error:
+                raise ValueError(f'{context}: {error}') from error
             if transaction.id in seen_ids:
                 msg = f'{context}: duplicate transaction id {transaction.id}'
                 raise ValueError(msg)

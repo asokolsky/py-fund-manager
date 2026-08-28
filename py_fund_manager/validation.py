@@ -6,14 +6,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from py_fund_manager.portfolio import (
-    find_manifest,
-    load_directory_manifests,
-    load_portfolio,
-    load_strategy,
+    Manifest,
+    find_manifest_in,
+    load_manifest,
     load_transactions,
 )
-from py_fund_manager.schemas import StrategyRevisionReference
-from py_fund_manager.strategy import load_strategy_history, load_strategy_revision
+from py_fund_manager.schemas import StrategyHistory, StrategyRevisionReference
+from py_fund_manager.strategy import load_strategy_revision
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -48,60 +47,92 @@ class ValidationSummary:
         )
 
 
+@dataclass(frozen=True)
+class PortfolioValidationCounts:
+    """Counts produced while validating Portfolio resource directories."""
+
+    portfolios: int
+    strategy_histories: int
+    validated_revisions: frozenset[tuple[str, str]]
+
+
 def validate_data_root(data_directory: Path) -> ValidationSummary:
     """Validate all current manifests, ledgers, references, and revisions."""
     errors: list[str] = []
     portfolios = _validate_portfolios(data_directory, errors)
-    strategies, revisions = _validate_strategies(data_directory, errors)
+    strategies, revisions = _validate_strategies(
+        data_directory, errors, portfolios.validated_revisions
+    )
     if errors:
         raise DataValidationError(errors)
     return ValidationSummary(
-        portfolios=portfolios[0],
+        portfolios=portfolios.portfolios,
         strategies=strategies,
-        strategy_histories=portfolios[1],
+        strategy_histories=portfolios.strategy_histories,
         revisions=revisions,
     )
 
 
-def _validate_portfolios(data_directory: Path, errors: list[str]) -> tuple[int, int]:
+def _validate_portfolios(
+    data_directory: Path, errors: list[str]
+) -> PortfolioValidationCounts:
     """Validate Portfolio directories and their effective Strategy histories."""
     portfolio_root = data_directory / 'portfolio'
     portfolio_count = 0
     history_count = 0
+    validated_revisions: set[tuple[str, str]] = set()
     if not portfolio_root.is_dir():
         errors.append(f'{portfolio_root}: portfolio resource directory does not exist')
-        return portfolio_count, history_count
+        return PortfolioValidationCounts(
+            portfolio_count, history_count, frozenset(validated_revisions)
+        )
     for directory in _resource_directories(portfolio_root):
+        manifests = _load_manifests(directory, errors)
         try:
-            path, _ = find_manifest(
-                directory, 'Portfolio', expected_name=directory.name
+            find_manifest_in(
+                directory, manifests, 'Portfolio', expected_name=directory.name
             )
-            load_portfolio(path)
             portfolio_count += 1
-            ledger = directory / 'transactions.csv'
-            if ledger.exists():
+        except (OSError, TypeError, ValueError) as error:
+            errors.append(str(error))
+
+        ledger = directory / 'transactions.csv'
+        if ledger.exists():
+            try:
                 load_transactions(ledger)
-            histories = [
-                (manifest_path, manifest)
-                for manifest_path, manifest in load_directory_manifests(directory)
-                if manifest.kind == 'StrategyHistory'
-            ]
+            except (OSError, TypeError, ValueError) as error:
+                errors.append(str(error))
+
+        histories = [
+            (manifest_path, manifest)
+            for manifest_path, manifest in manifests
+            if isinstance(manifest, StrategyHistory)
+        ]
+        try:
             _require_at_most_one_history(directory, histories)
             if histories:
                 history_path, history_manifest = histories[0]
                 _require_expected_name(
                     history_path, history_manifest.metadata.name, directory.name
                 )
-                history = load_strategy_history(history_path)
-                for assignment in history.spec.assignments:
+                for assignment in history_manifest.spec.assignments:
                     load_strategy_revision(data_directory, assignment.strategy)
+                    validated_revisions.add(
+                        (assignment.strategy.name, assignment.strategy.revision)
+                    )
                 history_count += 1
         except (OSError, TypeError, ValueError) as error:
             errors.append(str(error))
-    return portfolio_count, history_count
+    return PortfolioValidationCounts(
+        portfolio_count, history_count, frozenset(validated_revisions)
+    )
 
 
-def _validate_strategies(data_directory: Path, errors: list[str]) -> tuple[int, int]:
+def _validate_strategies(
+    data_directory: Path,
+    errors: list[str],
+    validated_revisions: frozenset[tuple[str, str]],
+) -> tuple[int, int]:
     """Validate current Strategy resources and every immutable revision."""
     strategy_root = data_directory / 'strategy'
     strategy_count = 0
@@ -110,15 +141,20 @@ def _validate_strategies(data_directory: Path, errors: list[str]) -> tuple[int, 
         errors.append(f'{strategy_root}: strategy resource directory does not exist')
         return strategy_count, revision_count
     for directory in _resource_directories(strategy_root):
+        manifests = _load_manifests(directory, errors)
         try:
-            path, _ = find_manifest(directory, 'Strategy', expected_name=directory.name)
-            load_strategy(path)
+            find_manifest_in(
+                directory, manifests, 'Strategy', expected_name=directory.name
+            )
             strategy_count += 1
         except (OSError, TypeError, ValueError) as error:
             errors.append(str(error))
         revisions_directory = directory / 'revisions'
         for revision_path in sorted(revisions_directory.glob('sha256-*.yaml')):
             revision = revision_path.stem.replace('sha256-', 'sha256:', 1)
+            if (directory.name, revision) in validated_revisions:
+                revision_count += 1
+                continue
             try:
                 load_strategy_revision(
                     data_directory,
@@ -128,6 +164,17 @@ def _validate_strategies(data_directory: Path, errors: list[str]) -> tuple[int, 
             except (OSError, TypeError, ValueError) as error:
                 errors.append(str(error))
     return strategy_count, revision_count
+
+
+def _load_manifests(directory: Path, errors: list[str]) -> list[tuple[Path, Manifest]]:
+    """Load valid manifests once while preserving independent parse failures."""
+    manifests: list[tuple[Path, Manifest]] = []
+    for path in sorted(directory.glob('*.yaml')):
+        try:
+            manifests.append((path, load_manifest(path)))
+        except (OSError, TypeError, ValueError) as error:
+            errors.append(str(error))
+    return manifests
 
 
 def _resource_directories(root: Path) -> list[Path]:

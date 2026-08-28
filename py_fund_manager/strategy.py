@@ -15,9 +15,9 @@ import yaml
 from py_fund_manager.portfolio import (
     _atomic_write_text,
     find_manifest,
+    find_manifest_in,
     load_directory_manifests,
     load_manifest,
-    load_portfolio,
     load_strategy,
 )
 from py_fund_manager.schemas import (
@@ -123,27 +123,22 @@ def assign_strategy(
     if not portfolio_directory.is_dir():
         msg = f"portfolio '{portfolio_id}' does not exist"
         raise ValueError(msg)
-    portfolio_path, _ = find_manifest(
-        portfolio_directory, 'Portfolio', expected_name=portfolio_id
+    portfolio_manifests = load_directory_manifests(portfolio_directory)
+    find_manifest_in(
+        portfolio_directory,
+        portfolio_manifests,
+        'Portfolio',
+        expected_name=portfolio_id,
     )
-    load_portfolio(portfolio_path)
     strategy_directory = data_directory / 'strategy' / strategy_id
-    strategy_path, _ = find_manifest(
+    _, strategy = find_manifest(
         strategy_directory, 'Strategy', expected_name=strategy_id
-    )
-    strategy = load_strategy(strategy_path)
-    revision = snapshot_strategy(strategy_directory, strategy)
-    assignment = StrategyAssignment(
-        id=f'assignment-{uuid4()}',
-        effective_at=effective_at,
-        strategy=StrategyRevisionReference(name=strategy_id, revision=revision),
-        reason=reason,
     )
     history_path = portfolio_directory / 'strategy-history.yaml'
     assignments: tuple[StrategyAssignment, ...] = ()
     history_manifests = [
         (path, manifest)
-        for path, manifest in load_directory_manifests(portfolio_directory)
+        for path, manifest in portfolio_manifests
         if manifest.kind == 'StrategyHistory'
     ]
     if len(history_manifests) > 1:
@@ -163,6 +158,24 @@ def assign_strategy(
         assignments = history_manifest.spec.assignments
         for existing in assignments:
             load_strategy_revision(data_directory, existing.strategy)
+    if effective_at.tzinfo is None:
+        msg = 'effective_at must include a UTC offset'
+        raise ValueError(msg)
+    if assignments and effective_at <= assignments[-1].effective_at:
+        previous = assignments[-1].effective_at.isoformat()
+        requested = effective_at.isoformat()
+        msg = (
+            f'strategy assignment effective time {requested} must be later than '
+            f'the latest assignment at {previous}'
+        )
+        raise ValueError(msg)
+    revision = snapshot_strategy(strategy_directory, strategy)
+    assignment = StrategyAssignment(
+        id=f'assignment-{uuid4()}',
+        effective_at=effective_at,
+        strategy=StrategyRevisionReference(name=strategy_id, revision=revision),
+        reason=reason,
+    )
     history = StrategyHistory(
         apiVersion='v1',
         kind='StrategyHistory',

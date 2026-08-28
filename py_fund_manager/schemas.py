@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 WEIGHT_TOLERANCE = Decimal('0.000001')
 PORTFOLIO_ID_PATTERN = re.compile(r'^[a-z0-9]+(?:-[a-z0-9]+)*$')
+RESOURCE_NAME_PATTERN = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*$')
 TICKER_PATTERN = re.compile(r'^[A-Z0-9][A-Z0-9.^=-]*$')
 REVISION_PATTERN = re.compile(r'^sha256:[0-9a-f]{64}$')
 
@@ -40,7 +41,7 @@ class ObjectMetadata(BaseModel):
 
     model_config = ConfigDict(extra='forbid', frozen=True, str_strip_whitespace=True)
 
-    name: str = Field(min_length=1)
+    name: str = Field(min_length=1, pattern=RESOURCE_NAME_PATTERN)
 
 
 class DisplayMetadata(ObjectMetadata):
@@ -222,7 +223,7 @@ class StrategyRevisionReference(BaseModel):
 
     model_config = ConfigDict(extra='forbid', frozen=True, str_strip_whitespace=True)
 
-    name: str = Field(min_length=1)
+    name: str = Field(min_length=1, pattern=RESOURCE_NAME_PATTERN)
     revision: str = Field(pattern=REVISION_PATTERN)
 
 

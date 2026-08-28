@@ -9,7 +9,12 @@ import yaml
 from pydantic import ValidationError
 
 from py_fund_manager.portfolio import create_portfolio
-from py_fund_manager.schemas import Strategy, StrategyHistory
+from py_fund_manager.schemas import (
+    ObjectMetadata,
+    Strategy,
+    StrategyHistory,
+    StrategyRevisionReference,
+)
 from py_fund_manager.strategy import (
     assign_strategy,
     effective_assignment,
@@ -168,7 +173,7 @@ apiVersion: v1
         self.assertEqual(len(history.spec.assignments), 2)
 
     def test_assignment_rejects_an_earlier_effective_time(self) -> None:
-        """Preserve chronological history when appending an assignment."""
+        """Reject chronology before creating a revision for changed content."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             create_portfolio(root, 'example-account')
@@ -183,14 +188,33 @@ apiVersion: v1
                 'balanced',
                 datetime(2026, 2, 1, tzinfo=UTC),
             )
+            revisions = strategy_directory / 'revisions'
+            before = {path.name for path in revisions.iterdir()}
+            changed = STRATEGY_DOCUMENT.replace('"0.600000"', '"0.700000"').replace(
+                '"0.400000"', '"0.300000"'
+            )
+            (strategy_directory / 'strategy.yaml').write_text(changed, encoding='utf-8')
 
-            with self.assertRaisesRegex(ValueError, 'increasing effective times'):
+            with self.assertRaisesRegex(
+                ValueError,
+                '2026-01-01T00:00:00.*later than.*2026-02-01T00:00:00',
+            ):
                 assign_strategy(
                     root,
                     'example-account',
                     'balanced',
                     datetime(2026, 1, 1, tzinfo=UTC),
                 )
+
+            self.assertEqual({path.name for path in revisions.iterdir()}, before)
+
+    def test_resource_names_cannot_escape_their_directory(self) -> None:
+        """Reject path separators while preserving mixed-case strategy names."""
+        self.assertEqual(ObjectMetadata(name='SnP500-direct').name, 'SnP500-direct')
+        with self.assertRaisesRegex(ValidationError, 'string_pattern_mismatch'):
+            ObjectMetadata(name='../../../outside')
+        with self.assertRaisesRegex(ValidationError, 'string_pattern_mismatch'):
+            StrategyRevisionReference(name='../outside', revision=f'sha256:{"a" * 64}')
 
     def test_sample_history_resolves_immutable_strategy(self) -> None:
         """Keep the fictional sample aligned with the implemented contract."""

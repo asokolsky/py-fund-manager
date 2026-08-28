@@ -101,6 +101,12 @@ uppercase code. Unknown fields, legacy `schema_version`, and any `apiVersion`
 other than the string `v1` are rejected. `metadata.name` must equal the containing
 portfolio directory name.
 
+Resource names begin with an ASCII letter or digit and may then contain ASCII
+letters, digits, periods, underscores, and hyphens. Path separators and relative
+path components are rejected. Portfolio creation applies the narrower lowercase
+kebab-case convention; existing mixed-case Strategy identities such as
+`SnP500-direct` remain valid.
+
 ## Holdings import schema
 
 The canonical `stocks.csv` input requires `ticker` and `quantity`:
