@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: StrategyHistory
+metadata:
+  name: sample
+spec:
+  assignments:
+    - id: initial-strategy
+      effective_at: 2026-01-01T00:00:00Z
+      strategy:
+        name: mag7
+        revision: sha256:e5d13aa0bc4c218a51be60e4e10b8ea4c8daafa99ca992cd2ead587ff3f4c103
+      reason: Initial fictional strategy

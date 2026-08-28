@@ -8,6 +8,8 @@ mise run py-fund-manager -- COMMAND [OPTIONS]
 
 Available commands:
 
+- [`validate`](cli-validate.md) verifies every discovered manifest, ledger,
+  Strategy reference, and immutable revision without writes or network access.
 - [`portfolio`](cli-portfolio.md) creates portfolio metadata and can bootstrap
   opening positions.
 - [`download`](cli-download.md) downloads historical market prices.
@@ -15,6 +17,9 @@ Available commands:
 effective strategy assignment.
 
 Use `mise run py-fund-manager -- --help` for the current command list.
+
+See the [validate command guide](cli-validate.md) for complete data-root checks,
+output, exit statuses, and side-effect guarantees.
 
 Show the installed version:
 

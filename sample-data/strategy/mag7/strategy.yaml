@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Strategy
+metadata:
+  name: mag7
+  display_name: Magnificent Seven equal weight
+spec:
+  allocation:
+    type: target_weights
+    positions:
+      AAPL: "0.142857"
+      AMZN: "0.142857"
+      GOOGL: "0.142857"
+      META: "0.142857"
+      MSFT: "0.142857"
+      NVDA: "0.142857"
+      TSLA: "0.142858"

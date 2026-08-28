@@ -62,7 +62,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"sample-data/strategies/SnP500-direct/generate_strategy.py" = ["INP001"]
+"sample-data/strategy/SnP500-direct/generate_strategy.py" = ["INP001"]
 
 [tool.ruff.format]
 quote-style = "single"

@@ -19,7 +19,7 @@ from . import __version__
 from .config import ConfigurationError, configured_data_root
 from .download import Interval, download, inclusive_year_range, tickers_argument
 from .log import setup_logging
-from .portfolio import create_portfolio, import_opening_positions
+from .portfolio import create_portfolio, find_manifest, import_opening_positions
 from .rebalance import rebalance_portfolio
 from .strategy import (
     assign_strategy,
@@ -27,6 +27,7 @@ from .strategy import (
     load_strategy_history,
     load_strategy_revision,
 )
+from .validation import validate_data_root
 
 CLI_NAME = 'py-fund-manager'
 
@@ -52,7 +53,7 @@ def data_directory() -> Path:
     return directory
 
 
-def main() -> int:
+def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuses.
     """Parse command-line arguments and dispatch the selected command."""
     parser = ArgumentParser(
         prog=CLI_NAME,
@@ -73,6 +74,7 @@ def main() -> int:
         help='Display module version and exit.',
     )
     commands = parser.add_subparsers(dest='command')
+    commands.add_parser('validate', help='Validate the complete configured data root')
     download_parser = commands.add_parser(
         'download', help='Download historical stock prices'
     )
@@ -125,6 +127,14 @@ def main() -> int:
 
     if args.command == 'download':
         return download(args.tickers, args.years, args.interval)
+    if args.command == 'validate':
+        try:
+            summary = validate_data_root(data_directory())
+        except (ConfigurationError, OSError, TypeError, ValueError) as error:
+            log.log(logging.ERROR, '%s', error)
+            return 1
+        print(summary.message())
+        return 0
     if args.command == 'portfolio':
         try:
             directory = data_directory()
@@ -230,7 +240,7 @@ def _parse_portfolio_action(arguments: list[str]) -> Namespace:
 
 def _strategy_command(directory: Path, portfolio_id: str, args: Namespace) -> int:
     """Dispatch a strategy command for an existing portfolio."""
-    history_path = directory / 'portfolios' / portfolio_id / 'strategy-history.yaml'
+    portfolio_directory = directory / 'portfolio' / portfolio_id
     if args.strategy_command == 'set':
         assignment = assign_strategy(
             directory,
@@ -246,17 +256,25 @@ def _strategy_command(directory: Path, portfolio_id: str, args: Namespace) -> in
             end='',
         )
         return 0
+    history_path, _ = find_manifest(
+        portfolio_directory, 'StrategyHistory', expected_name=portfolio_id
+    )
     history = load_strategy_history(history_path)
     if args.strategy_command == 'history':
-        for existing in history.assignments:
+        for existing in history.spec.assignments:
             load_strategy_revision(directory, existing.strategy)
-        print(yaml.safe_dump(history.model_dump(mode='json'), sort_keys=False), end='')
+        print(
+            yaml.safe_dump(
+                history.model_dump(mode='json', by_alias=True), sort_keys=False
+            ),
+            end='',
+        )
         return 0
     assignment = effective_assignment(history, args.effective_at or datetime.now(UTC))
     strategy = load_strategy_revision(directory, assignment.strategy)
     document = {
         'assignment': assignment.model_dump(mode='json', exclude_none=True),
-        'strategy': strategy.model_dump(mode='json', exclude_none=True),
+        'strategy': strategy.model_dump(mode='json', by_alias=True, exclude_none=True),
     }
     print(yaml.safe_dump(document, sort_keys=False), end='')
     return 0

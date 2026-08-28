@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Portfolio
+metadata:
+  name: sample
+  display_name: Fictional Sample Portfolio
+spec:
+  broker: example
+  account_id: sample-account
+  base_currency: USD

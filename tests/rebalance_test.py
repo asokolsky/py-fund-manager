@@ -16,12 +16,16 @@ from py_fund_manager.rebalance import (
     plan_rebalance,
 )
 from py_fund_manager.schemas import (
+    DisplayMetadata,
     OrderReason,
     Portfolio,
+    PortfolioSpec,
     PriceObservation,
     Strategy,
     StrategyAssignment,
     StrategyRevisionReference,
+    StrategySpec,
+    TargetAllocation,
     Transaction,
 )
 from py_fund_manager.strategy import strategy_revision
@@ -32,11 +36,14 @@ AS_OF = datetime(2026, 8, 26, 12, tzinfo=UTC)
 def portfolio() -> Portfolio:
     """Return a fictional USD portfolio for rebalance tests."""
     return Portfolio(
-        id='example-account',
-        name='Example account',
-        broker='example',
-        account_id='example-account',
-        base_currency='USD',
+        apiVersion='v1',
+        kind='Portfolio',
+        metadata=DisplayMetadata(
+            name='example-account', display_name='Example account'
+        ),
+        spec=PortfolioSpec(
+            broker='example', account_id='example-account', base_currency='USD'
+        ),
     )
 
 
@@ -46,7 +53,21 @@ def assignment(strategy: Strategy) -> StrategyAssignment:
         id='assignment-test',
         effective_at=datetime(2026, 1, 1, tzinfo=UTC),
         strategy=StrategyRevisionReference(
-            id=strategy.id, revision=strategy_revision(strategy)
+            name=strategy.metadata.name, revision=strategy_revision(strategy)
+        ),
+    )
+
+
+def target_strategy(positions: dict[str, str]) -> Strategy:
+    """Return a fictional target-weight Strategy manifest."""
+    return Strategy(
+        apiVersion='v1',
+        kind='Strategy',
+        metadata=DisplayMetadata(name='target', display_name='Target'),
+        spec=StrategySpec(
+            allocation=TargetAllocation.model_validate(
+                {'type': 'target_weights', 'positions': positions}
+            )
         ),
     )
 
@@ -138,16 +159,7 @@ class TestRebalance(unittest.TestCase):
             transaction('open-b', 'opening_position', ticker='MSFT', quantity='1'),
             transaction('cash', 'opening_cash', amount='100'),
         ]
-        strategy = Strategy.model_validate(
-            {
-                'id': 'target',
-                'name': 'Target',
-                'allocation': {
-                    'type': 'target_weights',
-                    'positions': {'AAPL': '0.6', 'NVDA': '0.4'},
-                },
-            }
-        )
+        strategy = target_strategy({'AAPL': '0.6', 'NVDA': '0.4'})
         prices = {
             ticker: price_observation(ticker, price)
             for ticker, price in {
@@ -183,16 +195,7 @@ class TestRebalance(unittest.TestCase):
     def test_executable_amounts_preserve_residual_cash(self) -> None:
         """Derive exact notionals and ending cash from rounded quantities."""
         transactions = [transaction('cash', 'opening_cash', amount='100')]
-        strategy = Strategy.model_validate(
-            {
-                'id': 'target',
-                'name': 'Target',
-                'allocation': {
-                    'type': 'target_weights',
-                    'positions': {'AAPL': '1'},
-                },
-            }
-        )
+        strategy = target_strategy({'AAPL': '1'})
         plan = plan_rebalance(
             portfolio(),
             transactions,
@@ -298,16 +301,7 @@ class TestRebalance(unittest.TestCase):
             transaction('open-b', 'opening_position', ticker='MSFT', quantity='1'),
             transaction('cash', 'opening_cash', amount='100'),
         ]
-        strategy = Strategy.model_validate(
-            {
-                'id': 'target',
-                'name': 'Target',
-                'allocation': {
-                    'type': 'target_weights',
-                    'positions': {'AAPL': '0.5', 'MSFT': '0.5'},
-                },
-            }
-        )
+        strategy = target_strategy({'AAPL': '0.5', 'MSFT': '0.5'})
         prices = {
             ticker: price_observation(ticker, price)
             for ticker, price in {
@@ -337,16 +331,7 @@ class TestRebalance(unittest.TestCase):
         transactions = [
             transaction('open-a', 'opening_position', ticker='AAPL', quantity='1')
         ]
-        strategy = Strategy.model_validate(
-            {
-                'id': 'target',
-                'name': 'Target',
-                'allocation': {
-                    'type': 'target_weights',
-                    'positions': {'AAPL': '1'},
-                },
-            }
-        )
+        strategy = target_strategy({'AAPL': '1'})
         plan = plan_rebalance(
             portfolio(),
             transactions,
@@ -371,16 +356,7 @@ class TestRebalance(unittest.TestCase):
             transaction('cash', 'opening_cash', amount='100'),
             transaction('deposit', 'deposit', amount='25'),
         ]
-        strategy = Strategy.model_validate(
-            {
-                'id': 'target',
-                'name': 'Target',
-                'allocation': {
-                    'type': 'target_weights',
-                    'positions': {'AAPL': '0.5', 'MSFT': '0.5'},
-                },
-            }
-        )
+        strategy = target_strategy({'AAPL': '0.5', 'MSFT': '0.5'})
         prices = {
             'AAPL': price_observation('AAPL', Decimal(100)),
             'MSFT': price_observation('MSFT', Decimal(50)),

@@ -9,6 +9,7 @@ downloading historical market prices.
 - Bootstrap opening positions from a canonical holdings CSV.
 - Store positions in a validated, append-oriented transaction ledger.
 - Assign effective-dated strategies with immutable content revisions.
+- Validate strict YAML manifests, resource identities, and revision references.
 - Generate strict JSON rebalance plans for contributions and withdrawals.
 - Download Yahoo Finance prices into atomic, year-partitioned Parquet files.
 
@@ -37,7 +38,8 @@ See [planned work](docs/todo.md) for capabilities that are not implemented yet.
 - [Planned work](docs/todo.md) tracks unimplemented capabilities and open work.
 - [Sample data](sample-data/README.md) explains fictional examples and private
   data roots.
-- [Command-line interface](docs/cli.md) links command-specific usage guides.
+- [Command-line interface](docs/cli.md) links command-specific usage guides,
+  including [complete data-root validation](docs/cli-validate.md).
 - [Sources](docs/sources.md) lists external references.
 
 ## Per-user configuration
@@ -48,8 +50,8 @@ configuration to its local checkout.
 
 [`docs/config.toml.example`](docs/config.toml.example) is a sample global
 configuration. Copy it to `~/.config/py-fund-manager/config.toml` and update
-`data.root` to select the directory containing private `portfolios/` and
-`strategies/`. The setting is required; the supplied sample explicitly selects
+`data.root` to select the directory containing private `portfolio/` and
+`strategy/`. The setting is required; the supplied sample explicitly selects
 this repo's fictional `sample-data/` root. See the [CLI configuration
 reference](docs/cli.md#data-root) for installation and path-resolution details.
 

@@ -50,7 +50,7 @@ unimplemented. Items stay here until they are addressed.
   date. Strategy selection belongs to strategy history.
 - **TODO: Private-data hardening.** Define backup, encryption, and secret-scanning
   policies for the separate private data root documented in the
-  [sample portfolio guide](../sample-data/portfolios/README.md).
+  [sample portfolio guide](../sample-data/portfolio/README.md).
 
 ## S&P 500 source maintenance
 

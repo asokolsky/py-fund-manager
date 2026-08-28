@@ -10,8 +10,10 @@ contract](README.md) for schemas and validation rules.
 mise run py-fund-manager -- portfolio --create etrade-brokerage
 ```
 
-The command creates `portfolios/etrade-brokerage/portfolio.yaml` below the
-root selected by the required [global configuration](cli.md#data-root).
+The command creates a conventional `portfolio.yaml` manifest below
+`portfolio/etrade-brokerage/` in the root selected by the required [global
+configuration](cli.md#data-root). Commands discover it by `kind: Portfolio`, so
+the filename can be changed without changing resource identity.
 
 ## Import opening positions
 
