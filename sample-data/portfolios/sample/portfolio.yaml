@@ -1,7 +1,0 @@
-schema_version: 1
-id: sample
-name: Fictional Sample Portfolio
-broker: example
-account_id: sample-account
-base_currency: USD
-opened_on: 2026-01-01

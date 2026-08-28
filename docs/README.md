@@ -12,21 +12,21 @@ file formats, schemas, and validation behavior.
 
 ## Directories and data roots
 
-A **data root** is an existing directory containing `portfolios/` and, eventually,
-`strategies/`:
+A **data root** is an existing directory containing `portfolio/` and, eventually,
+`strategy/`:
 
 ```text
 DATA_ROOT/
-├── portfolios/
+├── portfolio/
 │   └── etrade-roth-ira/
-│       ├── portfolio.yaml
-│       ├── strategy-history.yaml
+│       ├── account.yaml
+│       ├── allocation-history.yaml
 │       ├── transactions.csv
 │       └── imports/
 │           └── stocks.csv
-└── strategies/
-    └── two-stock-example/
-        ├── strategy.yaml
+└── strategy/
+    └── mag7/
+        ├── current.yaml
         └── README.md
 ```
 
@@ -43,53 +43,63 @@ PersonalProjects/
 ├── py-fund-manager/          # this public code repo
 └── py-fund-manager-data/     # separate private repo and data root
     ├── .git/
-    ├── portfolios/
+    ├── portfolio/
     │   └── etrade-roth-ira/
-    │       ├── portfolio.yaml
-    │       ├── strategy-history.yaml
+    │       ├── account.yaml
+    │       ├── allocation-history.yaml
     │       ├── transactions.csv
     │       └── imports/
     │           └── stocks.csv
-    └── strategies/
+    └── strategy/
 ```
 
 Each user can configure the private checkout wherever appropriate without
 recording its location in this repo.
 
-The CLI creates `portfolios/` below the selected root. Strategy commands use the
-`strategies/` hierarchy and portfolio strategy history.
+The CLI creates `portfolio/` below the selected root. Strategy commands use the
+`strategy/` hierarchy and portfolio strategy history.
 The generated
-[`sample-data/strategies/SnP500-direct/`](../sample-data/strategies/SnP500-direct/README.md)
+[`sample-data/strategy/SnP500-direct/`](../sample-data/strategy/SnP500-direct/README.md)
 strategy is documented separately.
+
+Top-level YAML filenames within a resource directory are descriptive conventions,
+not schema. The application strictly parses each `*.yaml` file and discovers its
+type from `apiVersion` and `kind`. A portfolio directory contains exactly one
+`Portfolio` and at most one `StrategyHistory`; a strategy directory contains
+exactly one current `Strategy`. Immutable files below `revisions/` are excluded
+from current-resource discovery. Canonical files contain exactly one manifest;
+multi-document YAML streams are rejected.
 
 ## Portfolio schema
 
-`portfolio.yaml` contains identity and configuration:
+A `Portfolio` manifest contains identity, presentation metadata, and account
+configuration:
 
 ```yaml
-schema_version: 1
-id: etrade-roth-ira
-name: etrade-roth-ira
-broker: etrade
-account_id: etrade-roth-ira
-base_currency: USD
+apiVersion: v1
+kind: Portfolio
+metadata:
+  name: etrade-roth-ira
+  display_name: E*TRADE Roth IRA
+spec:
+  broker: etrade
+  account_id: etrade-roth-ira
+  base_currency: USD
 ```
 
 The current creation command derives `broker` from the first segment of the
-portfolio ID and uses the ID for both `name` and the local `account_id`. These are
+portfolio ID and uses the ID for both metadata names and the local `account_id`. These are
 safe bootstrap defaults, not claims about the broker's displayed account name or
-account number. The optional model field is:
+account number. Account-opening state belongs in the transaction opening boundary,
+not in the Portfolio specification.
 
-```yaml
-opened_on: 2020-04-15
-```
-
-Strategy selection does not belong in `portfolio.yaml`.
-`strategy-history.yaml` is its sole authority.
+Strategy selection does not belong in the Portfolio manifest. StrategyHistory is
+its sole authority.
 
 Portfolio IDs use lowercase kebab-case. Currency is normalized to a three-character
-uppercase code. Unknown fields and any `schema_version` other than `1` are
-rejected.
+uppercase code. Unknown fields, legacy `schema_version`, and any `apiVersion`
+other than the string `v1` are rejected. `metadata.name` must equal the containing
+portfolio directory name.
 
 ## Holdings import schema
 
@@ -156,23 +166,31 @@ accounting rules are implemented.
 
 ## Strategy schema
 
-`strategy.yaml` has this validated shape:
+A `Strategy` manifest has this validated shape:
 
 ```yaml
-schema_version: 1
-id: two-stock-example
-name: Two-stock example
-benchmark: $SPX
-allocation:
-  type: target_weights
-  positions:
-    AAPL: "0.600000"
-    MSFT: "0.400000"
+apiVersion: v1
+kind: Strategy
+metadata:
+  name: mag7
+  display_name: Magnificent Seven equal weight
+spec:
+  allocation:
+    type: target_weights
+    positions:
+      AAPL: "0.142857"
+      AMZN: "0.142857"
+      GOOGL: "0.142857"
+      META: "0.142857"
+      MSFT: "0.142857"
+      NVDA: "0.142857"
+      TSLA: "0.142858"
 ```
 
 Strategy tickers are normalized to uppercase. Positions must be nonempty, weights
 must be nonnegative, and the validated total must equal `1.0` within the documented
 tolerance.
+`metadata.name` must equal the containing strategy directory name.
 
 ## Strategy revision storage
 
@@ -181,7 +199,7 @@ change. The layout stores content-addressed snapshots beside the editable
 strategy definition:
 
 ```text
-strategies/SnP500-direct/
+strategy/SnP500-direct/
 ├── strategy.yaml
 └── revisions/
     └── sha256-<64-lowercase-hex-digits>.yaml
@@ -198,24 +216,28 @@ changes.
 
 ## Strategy history schema
 
-`strategy-history.yaml` records the portfolio's effective-dated strategy
-assignments:
+A `StrategyHistory` manifest records the portfolio's effective-dated strategy
+assignments. Its `metadata.name` must equal the containing portfolio directory:
 
 ```yaml
-schema_version: 1
-assignments:
-  - id: initial-strategy
-    effective_at: 2026-01-01T00:00:00Z
-    strategy:
-      id: two-stock-example
-      revision: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-    reason: Initial portfolio strategy
-  - id: adopt-sp500-direct
-    effective_at: 2026-08-26T12:00:00Z
-    strategy:
-      id: SnP500-direct
-      revision: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-    reason: Move to direct S&P 500 replication
+apiVersion: v1
+kind: StrategyHistory
+metadata:
+  name: etrade-roth-ira
+spec:
+  assignments:
+    - id: initial-strategy
+      effective_at: 2026-01-01T00:00:00Z
+      strategy:
+        name: mag7
+        revision: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      reason: Initial portfolio strategy
+    - id: adopt-sp500-direct
+      effective_at: 2026-08-26T12:00:00Z
+      strategy:
+        name: SnP500-direct
+        revision: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+      reason: Move to direct S&P 500 replication
 ```
 
 The persisted revision value uses `sha256:` followed by 64 lowercase hexadecimal
@@ -223,7 +245,7 @@ digits. Assignment IDs must be unique and nonempty. Effective times must include
 UTC offset, appear in strictly increasing chronological order, and cannot be
 shared by multiple assignments. Reasons are optional nonempty text.
 
-Each strategy ID and revision must resolve to validated immutable strategy content.
+Each strategy name and revision must resolve to validated immutable strategy content.
 Existing assignments cannot be edited or removed through normal commands. The
 application adds an assignment by validating the entire existing document,
 appending one entry, and atomically replacing the YAML file. Append-only is a

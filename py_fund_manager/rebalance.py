@@ -11,6 +11,7 @@ import pyarrow.parquet as pq
 
 from py_fund_manager.download import STOCKS_DIRECTORY
 from py_fund_manager.portfolio import (
+    find_manifest,
     load_portfolio,
     load_transactions,
 )
@@ -54,10 +55,10 @@ def derive_portfolio_state(
     for transaction in transactions:
         if transaction.occurred_at > as_of:
             continue
-        if transaction.currency != portfolio.base_currency:
+        if transaction.currency != portfolio.spec.base_currency:
             msg = (
                 f'transaction {transaction.id} uses {transaction.currency}; '
-                f'portfolio base currency is {portfolio.base_currency}'
+                f'portfolio base currency is {portfolio.spec.base_currency}'
             )
             raise ValueError(msg)
         ticker = transaction.ticker
@@ -199,8 +200,8 @@ def plan_rebalance(
     generated_at: datetime | None = None,
 ) -> RebalancePlan:
     """Calculate a strict fractional-share rebalance order plan."""
-    if strategy.id != assignment.strategy.id:
-        msg = 'strategy does not match the effective assignment ID'
+    if strategy.metadata.name != assignment.strategy.name:
+        msg = 'strategy does not match the effective assignment name'
         raise ValueError(msg)
     if strategy_revision(strategy) != assignment.strategy.revision:
         msg = 'strategy does not match the effective assignment revision'
@@ -222,10 +223,10 @@ def plan_rebalance(
         if observation.ticker != ticker:
             msg = f'price key {ticker} contains observation for {observation.ticker}'
             raise ValueError(msg)
-        if observation.currency != portfolio.base_currency:
+        if observation.currency != portfolio.spec.base_currency:
             msg = (
                 f'{ticker} price uses {observation.currency}; '
-                f'expected {portfolio.base_currency}'
+                f'expected {portfolio.spec.base_currency}'
             )
             raise ValueError(msg)
         if observation.available_at > as_of:
@@ -305,13 +306,13 @@ def plan_rebalance(
     )
     warnings = _plan_warnings(positions, strategy, prices, as_of)
     return RebalancePlan(
-        portfolio_id=portfolio.id,
+        portfolio_id=portfolio.metadata.name,
         strategy_assignment_id=assignment.id,
         strategy=assignment.strategy,
         generated_at=generated_at or datetime.now(UTC),
         valuation=RebalanceValuation(
             as_of=as_of,
-            currency=portfolio.base_currency,
+            currency=portfolio.spec.base_currency,
             holdings_value=holdings_value.quantize(CENT),
             available_cash=cash.quantize(CENT),
             contribution=contribution.quantize(CENT),
@@ -340,20 +341,23 @@ def rebalance_portfolio(
     stocks_directory: Path = STOCKS_DIRECTORY,
 ) -> RebalancePlan:
     """Load all portfolio inputs and create its rebalance order plan."""
-    portfolio_directory = data_directory / 'portfolios' / portfolio_id
-    portfolio = load_portfolio(portfolio_directory / 'portfolio.yaml')
-    if portfolio.id != portfolio_id:
-        msg = f'expected portfolio ID {portfolio_id}, got {portfolio.id}'
-        raise ValueError(msg)
+    portfolio_directory = data_directory / 'portfolio' / portfolio_id
+    portfolio_path, _ = find_manifest(
+        portfolio_directory, 'Portfolio', expected_name=portfolio_id
+    )
+    portfolio = load_portfolio(portfolio_path)
     transactions = load_transactions(portfolio_directory / 'transactions.csv')
-    history = load_strategy_history(portfolio_directory / 'strategy-history.yaml')
+    history_path, _ = find_manifest(
+        portfolio_directory, 'StrategyHistory', expected_name=portfolio_id
+    )
+    history = load_strategy_history(history_path)
     assignment = effective_assignment(history, as_of)
     strategy = load_strategy_revision(data_directory, assignment.strategy)
     positions, _ = derive_portfolio_state(portfolio, transactions, as_of)
     prices = load_latest_daily_prices(
         set(positions) | set(strategy.target_weights),
         as_of,
-        portfolio.base_currency,
+        portfolio.spec.base_currency,
         stocks_directory,
     )
     return plan_rebalance(

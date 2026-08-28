@@ -124,14 +124,19 @@ def generate_strategy(source: Path, output: Path) -> None:
     rows = _workbook_rows(source)
     positions = _normalized_weights(_equity_weights(rows))
     document = {
-        'schema_version': 1,
-        'id': 'SnP500-direct',
-        'name': f'S&P 500 direct replication ({_snapshot_date(rows)})',
-        'benchmark': '$SPX',
-        'allocation': {
-            'type': 'target_weights',
-            'positions': {
-                ticker: format(weight, '.12f') for ticker, weight in positions
+        'apiVersion': 'v1',
+        'kind': 'Strategy',
+        'metadata': {
+            'name': 'SnP500-direct',
+            'display_name': f'S&P 500 direct replication ({_snapshot_date(rows)})',
+        },
+        'spec': {
+            'benchmark': '$SPX',
+            'allocation': {
+                'type': 'target_weights',
+                'positions': {
+                    ticker: format(weight, '.12f') for ticker, weight in positions
+                },
             },
         },
     }

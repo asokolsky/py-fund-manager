@@ -43,6 +43,8 @@ mise exec -- uv run -m unittest -v \
   contribution and withdrawal plans.
 - `strategy_test.py` covers immutable strategy revisions and effective assignment
   history.
+- `validation_test.py` covers complete side-effect-free data-root validation and
+  aggregated resource errors.
 
 Regular tests must not make live Yahoo Finance requests. Explicit end-to-end
 checks should write into a temporary directory and remove their downloaded data

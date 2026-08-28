@@ -23,12 +23,31 @@ only for generated historical-price data, where typed columns and analytical
 reads matter more than manual editing. Generated Parquet files are never account
 or transaction sources of truth.
 
+## YAML resources use a versioned manifest envelope
+
+Authored YAML uses `apiVersion: v1`, a strict `kind`, `metadata`, and `spec`.
+`metadata.name` is stable machine identity, `metadata.display_name` preserves a
+human-readable Portfolio or Strategy name, and `spec` contains desired domain
+configuration. Account-opening state remains at the transaction boundary rather
+than in Portfolio configuration.
+
+The application discovers current resources by kind among top-level YAML files in
+singular `portfolio/<name>/` and `strategy/<name>/` directories. Filenames remain
+descriptive conventions rather than type declarations. Resource directories keep
+transactions, imports, and immutable revisions within bounded ownership and
+atomicity boundaries. Revision directories are not scanned as current resources.
+
+Canonical storage accepts one manifest per file. Strict parsing rejects duplicate
+keys and multi-document streams. A portable multi-resource bundle would need its
+own identity, reference, and atomic-application contract and is therefore outside
+the canonical storage model.
+
 ## Strategy history uses YAML
 
 Strategy assignments are infrequent, human-reviewed configuration events with
 nested strategy identity, revision, and optional rationale. They are stored in a
-separate `strategy-history.yaml`, not forced into transaction-shaped CSV rows or
-mixed with stable account identity in `portfolio.yaml`.
+separate StrategyHistory manifest, not forced into transaction-shaped CSV rows or
+mixed with stable Portfolio identity.
 
 The assignment list is append-only in the domain model. Because it remains small,
 the application validates and atomically rewrites the complete YAML document when
@@ -36,14 +55,13 @@ adding an assignment. Existing entries cannot be edited or removed through norma
 commands. A strategy change records intent only; it does not create transactions
 or automatically place or propose trades.
 
-`strategy-history.yaml` is the sole authority for effective strategy selection.
-`portfolio.yaml` does not duplicate the current strategy as a second source of
-truth.
+StrategyHistory is the sole authority for effective strategy selection. Portfolio
+does not duplicate the current strategy as a second source of truth.
 
 ## Strategy revisions are immutable
 
-A stable strategy ID may acquire new constituents and weights. Each assignment
-therefore records both the ID and a SHA-256 revision derived from canonical
+A stable Strategy name may acquire new constituents and weights. Each assignment
+therefore records both the name and a SHA-256 revision derived from canonical
 validated content. Content-addressed revision snapshots remain available after the
 editable strategy definition changes. Order plans record the assignment and
 revision they used, preserving reproducibility without treating strategy intent as
@@ -77,7 +95,8 @@ conflicting latest observations are validation failures.
 
 All persisted inputs and structured outputs are defined as frozen Pydantic models
 in `py_fund_manager/schemas.py`. Persisted-document
-loaders reject unknown fields, unsupported YAML schema versions, invalid
+loaders reject duplicate keys, unknown fields, unsupported API versions or kinds,
+invalid
 identifiers and tickers, naive timestamps, invalid decimal values, and
 transaction shapes missing required security fields. Examples in the storage
 contract describe those models; they are not independent schemas.

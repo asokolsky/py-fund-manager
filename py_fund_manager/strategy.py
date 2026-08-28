@@ -14,13 +14,18 @@ import yaml
 
 from py_fund_manager.portfolio import (
     _atomic_write_text,
-    _load_yaml_mapping,
+    find_manifest,
+    load_directory_manifests,
+    load_manifest,
     load_portfolio,
+    load_strategy,
 )
 from py_fund_manager.schemas import (
+    ObjectMetadata,
     Strategy,
     StrategyAssignment,
     StrategyHistory,
+    StrategyHistorySpec,
     StrategyRevisionReference,
 )
 
@@ -46,7 +51,7 @@ def snapshot_strategy(strategy_directory: Path, strategy: Strategy) -> str:
     revision = strategy_revision(strategy)
     revision_path = _revision_path(strategy_directory, revision)
     if revision_path.exists():
-        stored = Strategy.model_validate(_load_yaml_mapping(revision_path))
+        stored = load_strategy(revision_path)
         if strategy_revision(stored) != revision:
             msg = f'{revision_path}: strategy revision does not match its filename'
             raise ValueError(msg)
@@ -64,21 +69,28 @@ def load_strategy_revision(
     data_directory: Path, reference: StrategyRevisionReference
 ) -> Strategy:
     """Load a strategy revision and verify its identity and content digest."""
-    strategy_directory = data_directory / 'strategies' / reference.id
+    strategy_directory = data_directory / 'strategy' / reference.name
     revision_path = _revision_path(strategy_directory, reference.revision)
-    strategy = Strategy.model_validate(_load_yaml_mapping(revision_path))
-    if strategy.id != reference.id:
-        msg = f'{revision_path}: expected strategy ID {reference.id}, got {strategy.id}'
-        raise ValueError(msg)
+    strategy = load_strategy(revision_path)
+    if strategy.metadata.name != reference.name:
+        msg = (
+            f'{revision_path}: expected Strategy name {reference.name}, '
+            f'got {strategy.metadata.name}'
+        )
+        raise TypeError(msg)
     if strategy_revision(strategy) != reference.revision:
         msg = f'{revision_path}: strategy content does not match its revision'
-        raise ValueError(msg)
+        raise TypeError(msg)
     return strategy
 
 
 def load_strategy_history(path: Path) -> StrategyHistory:
     """Load and validate an effective-dated strategy history."""
-    return StrategyHistory.model_validate(_load_yaml_mapping(path))
+    manifest = load_manifest(path)
+    if not isinstance(manifest, StrategyHistory):
+        msg = f'{path}: expected kind StrategyHistory, got {manifest.kind}'
+        raise TypeError(msg)
+    return manifest
 
 
 def effective_assignment(
@@ -90,7 +102,7 @@ def effective_assignment(
         raise ValueError(msg)
     eligible = [
         assignment
-        for assignment in history.assignments
+        for assignment in history.spec.assignments
         if assignment.effective_at <= effective_at
     ]
     if not eligible:
@@ -107,36 +119,57 @@ def assign_strategy(
     reason: str | None = None,
 ) -> StrategyAssignment:
     """Snapshot a strategy and append its assignment to a portfolio history."""
-    portfolio_directory = data_directory / 'portfolios' / portfolio_id
-    portfolio_path = portfolio_directory / 'portfolio.yaml'
-    if not portfolio_path.is_file():
+    portfolio_directory = data_directory / 'portfolio' / portfolio_id
+    if not portfolio_directory.is_dir():
         msg = f"portfolio '{portfolio_id}' does not exist"
         raise ValueError(msg)
-    portfolio = load_portfolio(portfolio_path)
-    if portfolio.id != portfolio_id:
-        msg = f'{portfolio_path}: expected portfolio ID {portfolio_id}, got {portfolio.id}'
-        raise ValueError(msg)
-    strategy_directory = data_directory / 'strategies' / strategy_id
-    strategy_path = strategy_directory / 'strategy.yaml'
-    strategy = Strategy.model_validate(_load_yaml_mapping(strategy_path))
-    if strategy.id != strategy_id:
-        msg = f'{strategy_path}: expected strategy ID {strategy_id}, got {strategy.id}'
-        raise ValueError(msg)
+    portfolio_path, _ = find_manifest(
+        portfolio_directory, 'Portfolio', expected_name=portfolio_id
+    )
+    load_portfolio(portfolio_path)
+    strategy_directory = data_directory / 'strategy' / strategy_id
+    strategy_path, _ = find_manifest(
+        strategy_directory, 'Strategy', expected_name=strategy_id
+    )
+    strategy = load_strategy(strategy_path)
     revision = snapshot_strategy(strategy_directory, strategy)
     assignment = StrategyAssignment(
         id=f'assignment-{uuid4()}',
         effective_at=effective_at,
-        strategy=StrategyRevisionReference(id=strategy_id, revision=revision),
+        strategy=StrategyRevisionReference(name=strategy_id, revision=revision),
         reason=reason,
     )
     history_path = portfolio_directory / 'strategy-history.yaml'
     assignments: tuple[StrategyAssignment, ...] = ()
-    if history_path.exists():
-        assignments = load_strategy_history(history_path).assignments
+    history_manifests = [
+        (path, manifest)
+        for path, manifest in load_directory_manifests(portfolio_directory)
+        if manifest.kind == 'StrategyHistory'
+    ]
+    if len(history_manifests) > 1:
+        paths = ', '.join(str(path) for path, _ in history_manifests)
+        msg = (
+            f'{portfolio_directory}: multiple StrategyHistory manifests found: {paths}'
+        )
+        raise ValueError(msg)
+    if history_manifests:
+        history_path, history_manifest = history_manifests[0]
+        if history_manifest.metadata.name != portfolio_id:
+            msg = (
+                f'{history_path}: expected metadata.name {portfolio_id!r}, '
+                f'got {history_manifest.metadata.name!r}'
+            )
+            raise ValueError(msg)
+        assignments = history_manifest.spec.assignments
         for existing in assignments:
             load_strategy_revision(data_directory, existing.strategy)
-    history = StrategyHistory(assignments=(*assignments, assignment))
-    document = history.model_dump(mode='json', exclude_none=True)
+    history = StrategyHistory(
+        apiVersion='v1',
+        kind='StrategyHistory',
+        metadata=ObjectMetadata(name=portfolio_id),
+        spec=StrategyHistorySpec(assignments=(*assignments, assignment)),
+    )
+    document = history.model_dump(mode='json', by_alias=True, exclude_none=True)
     _atomic_write_text(history_path, yaml.safe_dump(document, sort_keys=False))
     return assignment
 

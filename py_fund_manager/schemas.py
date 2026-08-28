@@ -35,8 +35,42 @@ class TransactionType(StrEnum):
     TRANSFER_OUT = 'transfer_out'
 
 
+class ObjectMetadata(BaseModel):
+    """Stable resource identity shared by all YAML manifests."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True, str_strip_whitespace=True)
+
+    name: str = Field(min_length=1)
+
+
+class DisplayMetadata(ObjectMetadata):
+    """Resource identity with a required human-readable presentation name."""
+
+    display_name: str = Field(min_length=1)
+
+
+class PortfolioSpec(BaseModel):
+    """Desired configuration for one investment account."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+        frozen=True,
+        str_strip_whitespace=True,
+    )
+
+    broker: str = Field(min_length=1)
+    account_id: str = Field(min_length=1)
+    base_currency: str = Field(min_length=3, max_length=3)
+
+    @field_validator('base_currency', mode='before')
+    @classmethod
+    def normalize_currency(cls, value: object) -> object:
+        """Normalize a serialized ISO currency code."""
+        return value.strip().upper() if isinstance(value, str) else value
+
+
 class Portfolio(BaseModel):
-    """Identity and configuration for one investment account."""
+    """Versioned manifest for one investment account."""
 
     model_config = ConfigDict(
         extra='forbid',
@@ -45,19 +79,10 @@ class Portfolio(BaseModel):
         validate_by_name=True,
     )
 
-    schema_version: Literal[1] = 1
-    id: str = Field(min_length=1, pattern=PORTFOLIO_ID_PATTERN)
-    name: str = Field(min_length=1)
-    broker: str = Field(min_length=1)
-    account_id: str = Field(min_length=1)
-    base_currency: str = Field(min_length=3, max_length=3)
-    opened_on: date | None = None
-
-    @field_validator('base_currency', mode='before')
-    @classmethod
-    def normalize_currency(cls, value: object) -> object:
-        """Normalize a serialized ISO currency code."""
-        return value.strip().upper() if isinstance(value, str) else value
+    api_version: Literal['v1'] = Field(alias='apiVersion')
+    kind: Literal['Portfolio']
+    metadata: DisplayMetadata
+    spec: PortfolioSpec
 
 
 class Transaction(BaseModel):
@@ -162,21 +187,34 @@ class TargetAllocation(BaseModel):
         return value
 
 
-class Strategy(BaseModel):
-    """A target allocation that can be applied to a portfolio."""
+class StrategySpec(BaseModel):
+    """Desired target allocation for an investment strategy."""
 
     model_config = ConfigDict(extra='forbid', frozen=True, str_strip_whitespace=True)
 
-    schema_version: Literal[1] = 1
-    id: str = Field(min_length=1)
-    name: str = Field(min_length=1)
     allocation: TargetAllocation
     benchmark: str | None = None
+
+
+class Strategy(BaseModel):
+    """Versioned manifest for a target allocation strategy."""
+
+    model_config = ConfigDict(
+        extra='forbid',
+        frozen=True,
+        str_strip_whitespace=True,
+        validate_by_name=True,
+    )
+
+    api_version: Literal['v1'] = Field(alias='apiVersion')
+    kind: Literal['Strategy']
+    metadata: DisplayMetadata
+    spec: StrategySpec
 
     @property
     def target_weights(self) -> dict[str, Decimal]:
         """Expose target weights directly for allocation calculations."""
-        return self.allocation.positions
+        return self.spec.allocation.positions
 
 
 class StrategyRevisionReference(BaseModel):
@@ -184,7 +222,7 @@ class StrategyRevisionReference(BaseModel):
 
     model_config = ConfigDict(extra='forbid', frozen=True, str_strip_whitespace=True)
 
-    id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
     revision: str = Field(pattern=REVISION_PATTERN)
 
 
@@ -208,12 +246,11 @@ class StrategyAssignment(BaseModel):
         return value
 
 
-class StrategyHistory(BaseModel):
-    """Ordered append-only strategy assignments for one portfolio."""
+class StrategyHistorySpec(BaseModel):
+    """Effective-dated Strategy assignments for one Portfolio."""
 
     model_config = ConfigDict(extra='forbid', frozen=True)
 
-    schema_version: Literal[1] = 1
     assignments: tuple[StrategyAssignment, ...] = Field(min_length=1)
 
     @field_validator('assignments')
@@ -231,6 +268,17 @@ class StrategyHistory(BaseModel):
             msg = 'strategy assignments must have increasing effective times'
             raise ValueError(msg)
         return value
+
+
+class StrategyHistory(BaseModel):
+    """Versioned manifest of Strategy assignments for one Portfolio."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True, validate_by_name=True)
+
+    api_version: Literal['v1'] = Field(alias='apiVersion')
+    kind: Literal['StrategyHistory']
+    metadata: ObjectMetadata
+    spec: StrategyHistorySpec
 
 
 class PriceObservation(BaseModel):

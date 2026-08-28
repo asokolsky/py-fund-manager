@@ -10,13 +10,13 @@ This directory contains fictional portfolios within the explicit
 
 - `portfolio.yaml`: validated account metadata using fictional identifiers.
 - `strategy-history.yaml`: an effective-dated assignment to an immutable revision
-  of the fictional two-stock strategy.
+  of the fictional equal-weight Magnificent Seven strategy.
 - `transactions.csv`: two opening positions with fixed example timestamps.
 - `imports/stocks.csv`: the canonical holdings input represented by those opening
   transactions.
 
-`sample-data/` is the sample data root because it contains this `portfolios/`
-directory and the sibling `strategies/` directory. The sample is safe to inspect
+`sample-data/` is the sample data root because it contains this `portfolio/`
+directory and the sibling `strategy/` directory. The sample is safe to inspect
 and use in deterministic tests. Do not replace its values with broker exports or
 actual account identifiers.
 
@@ -34,7 +34,7 @@ PersonalProjects/
 ├── py-fund-manager/       # public code and fictional sample
 └── py-fund-manager-data/  # private Git repo and real data root
     ├── .git/
-    └── portfolios/
+    └── portfolio/
 ```
 
 If the private repo already exists remotely, clone it as the sibling

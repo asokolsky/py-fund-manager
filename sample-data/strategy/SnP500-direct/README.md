@@ -10,7 +10,7 @@ not represent an actual brokerage account.
 
 ```shell
 mise exec -- uv run python \
-  sample-data/strategies/SnP500-direct/generate_strategy.py
+  sample-data/strategy/SnP500-direct/generate_strategy.py
 ```
 
 ## Assumptions

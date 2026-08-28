@@ -18,15 +18,18 @@ from py_fund_manager.strategy import (
     strategy_revision,
 )
 
-STRATEGY_DOCUMENT = """schema_version: 1
-id: balanced
-name: Balanced
-benchmark: $SPX
-allocation:
-  type: target_weights
-  positions:
-    AAPL: "0.600000"
-    MSFT: "0.400000"
+STRATEGY_DOCUMENT = """apiVersion: v1
+kind: Strategy
+metadata:
+  name: balanced
+  display_name: Balanced
+spec:
+  benchmark: $SPX
+  allocation:
+    type: target_weights
+    positions:
+      AAPL: "0.600000"
+      MSFT: "0.400000"
 """
 
 
@@ -36,41 +39,51 @@ class TestStrategyHistory(unittest.TestCase):
     def test_history_requires_unique_ordered_assignments(self) -> None:
         """Reject duplicate identities and non-increasing effective times."""
         reference = {
-            'id': 'balanced',
+            'name': 'balanced',
             'revision': f'sha256:{"a" * 64}',
         }
         with self.assertRaisesRegex(ValidationError, 'increasing effective times'):
             StrategyHistory.model_validate(
                 {
-                    'assignments': [
-                        {
-                            'id': 'second',
-                            'effective_at': '2026-02-01T00:00:00Z',
-                            'strategy': reference,
-                        },
-                        {
-                            'id': 'first',
-                            'effective_at': '2026-01-01T00:00:00Z',
-                            'strategy': reference,
-                        },
-                    ]
+                    'apiVersion': 'v1',
+                    'kind': 'StrategyHistory',
+                    'metadata': {'name': 'example-account'},
+                    'spec': {
+                        'assignments': [
+                            {
+                                'id': 'second',
+                                'effective_at': '2026-02-01T00:00:00Z',
+                                'strategy': reference,
+                            },
+                            {
+                                'id': 'first',
+                                'effective_at': '2026-01-01T00:00:00Z',
+                                'strategy': reference,
+                            },
+                        ]
+                    },
                 }
             )
         with self.assertRaisesRegex(ValidationError, 'IDs must be unique'):
             StrategyHistory.model_validate(
                 {
-                    'assignments': [
-                        {
-                            'id': 'duplicate',
-                            'effective_at': '2026-01-01T00:00:00Z',
-                            'strategy': reference,
-                        },
-                        {
-                            'id': 'duplicate',
-                            'effective_at': '2026-02-01T00:00:00Z',
-                            'strategy': reference,
-                        },
-                    ]
+                    'apiVersion': 'v1',
+                    'kind': 'StrategyHistory',
+                    'metadata': {'name': 'example-account'},
+                    'spec': {
+                        'assignments': [
+                            {
+                                'id': 'duplicate',
+                                'effective_at': '2026-01-01T00:00:00Z',
+                                'strategy': reference,
+                            },
+                            {
+                                'id': 'duplicate',
+                                'effective_at': '2026-02-01T00:00:00Z',
+                                'strategy': reference,
+                            },
+                        ]
+                    },
                 }
             )
 
@@ -79,16 +92,21 @@ class TestStrategyHistory(unittest.TestCase):
         with self.assertRaisesRegex(ValidationError, 'must include a UTC offset'):
             StrategyHistory.model_validate(
                 {
-                    'assignments': [
-                        {
-                            'id': 'initial',
-                            'effective_at': '2026-01-01T00:00:00',
-                            'strategy': {
-                                'id': 'balanced',
-                                'revision': f'sha256:{"a" * 64}',
-                            },
-                        }
-                    ]
+                    'apiVersion': 'v1',
+                    'kind': 'StrategyHistory',
+                    'metadata': {'name': 'example-account'},
+                    'spec': {
+                        'assignments': [
+                            {
+                                'id': 'initial',
+                                'effective_at': '2026-01-01T00:00:00',
+                                'strategy': {
+                                    'name': 'balanced',
+                                    'revision': f'sha256:{"a" * 64}',
+                                },
+                            }
+                        ]
+                    },
                 }
             )
 
@@ -97,11 +115,12 @@ class TestStrategyHistory(unittest.TestCase):
         first = Strategy.model_validate(yaml.safe_load(STRATEGY_DOCUMENT))
         reordered = Strategy.model_validate(
             yaml.safe_load(
-                """name: Balanced
-allocation: {positions: {MSFT: "0.400000", AAPL: "0.600000"}, type: target_weights}
-id: balanced
-benchmark: $SPX
-schema_version: 1
+                """kind: Strategy
+spec:
+  allocation: {positions: {MSFT: "0.400000", AAPL: "0.600000"}, type: target_weights}
+  benchmark: $SPX
+metadata: {display_name: Balanced, name: balanced}
+apiVersion: v1
 """
             )
         )
@@ -113,10 +132,13 @@ schema_version: 1
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             create_portfolio(root, 'example-account')
-            strategy_directory = root / 'strategies' / 'balanced'
+            strategy_directory = root / 'strategy' / 'balanced'
             strategy_directory.mkdir(parents=True)
             (strategy_directory / 'strategy.yaml').write_text(
                 STRATEGY_DOCUMENT, encoding='utf-8'
+            )
+            (strategy_directory / 'strategy.yaml').rename(
+                strategy_directory / 'allocation.yaml'
             )
             first = assign_strategy(
                 root,
@@ -125,6 +147,9 @@ schema_version: 1
                 datetime(2026, 1, 1, tzinfo=UTC),
                 'Initial strategy',
             )
+            history_path = root / 'portfolio/example-account/strategy-history.yaml'
+            renamed_history = root / 'portfolio/example-account/allocations.yaml'
+            history_path.rename(renamed_history)
             second = assign_strategy(
                 root,
                 'example-account',
@@ -133,23 +158,21 @@ schema_version: 1
                 'Refresh allocation',
             )
 
-            history = load_strategy_history(
-                root / 'portfolios/example-account/strategy-history.yaml'
-            )
+            history = load_strategy_history(renamed_history)
             selected = effective_assignment(history, datetime(2026, 1, 15, tzinfo=UTC))
             strategy = load_strategy_revision(root, selected.strategy)
 
         self.assertEqual(selected.id, first.id)
         self.assertNotEqual(first.id, second.id)
-        self.assertEqual(strategy.id, 'balanced')
-        self.assertEqual(len(history.assignments), 2)
+        self.assertEqual(strategy.metadata.name, 'balanced')
+        self.assertEqual(len(history.spec.assignments), 2)
 
     def test_assignment_rejects_an_earlier_effective_time(self) -> None:
         """Preserve chronological history when appending an assignment."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             create_portfolio(root, 'example-account')
-            strategy_directory = root / 'strategies' / 'balanced'
+            strategy_directory = root / 'strategy' / 'balanced'
             strategy_directory.mkdir(parents=True)
             (strategy_directory / 'strategy.yaml').write_text(
                 STRATEGY_DOCUMENT, encoding='utf-8'
@@ -172,14 +195,13 @@ schema_version: 1
     def test_sample_history_resolves_immutable_strategy(self) -> None:
         """Keep the fictional sample aligned with the implemented contract."""
         root = Path(__file__).parents[1] / 'sample-data'
-        history = load_strategy_history(
-            root / 'portfolios/sample/strategy-history.yaml'
-        )
+        history = load_strategy_history(root / 'portfolio/sample/strategy-history.yaml')
         assignment = effective_assignment(history, datetime(2026, 1, 1, tzinfo=UTC))
         strategy = load_strategy_revision(root, assignment.strategy)
 
-        self.assertEqual(assignment.strategy.id, 'two-stock-example')
-        self.assertEqual(strategy.id, 'two-stock-example')
+        self.assertEqual(assignment.strategy.name, 'mag7')
+        self.assertEqual(strategy.metadata.name, 'mag7')
+        self.assertEqual(len(strategy.target_weights), 7)
 
 
 if __name__ == '__main__':

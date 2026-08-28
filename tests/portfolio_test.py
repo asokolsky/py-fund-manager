@@ -2,7 +2,6 @@
 
 import tempfile
 import unittest
-from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
@@ -10,6 +9,7 @@ from pydantic import ValidationError
 
 from py_fund_manager.portfolio import (
     create_portfolio,
+    find_manifest,
     import_opening_positions,
     load_portfolio,
     load_strategy,
@@ -26,36 +26,40 @@ class TestPortfolioStorage(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'portfolio.yaml'
             path.write_text(
-                """schema_version: 1
-id: etrade-roth-ira
-name: E*TRADE Roth IRA
-broker: etrade
-account_id: "...1234"
-base_currency: usd
-opened_on: 2020-04-15
+                """apiVersion: v1
+kind: Portfolio
+metadata:
+  name: etrade-roth-ira
+  display_name: E*TRADE Roth IRA
+spec:
+  broker: etrade
+  account_id: "...1234"
+  base_currency: usd
 """,
                 encoding='utf-8',
             )
             portfolio = load_portfolio(path)
 
-        self.assertEqual(portfolio.id, 'etrade-roth-ira')
-        self.assertEqual(portfolio.base_currency, 'USD')
-        self.assertEqual(portfolio.opened_on, date(2020, 4, 15))
+        self.assertEqual(portfolio.metadata.name, 'etrade-roth-ira')
+        self.assertEqual(portfolio.spec.base_currency, 'USD')
 
     def test_load_strategy_requires_weights_to_total_one(self) -> None:
         """Accept precise weights and reject an incomplete allocation."""
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'strategy.yaml'
             path.write_text(
-                """schema_version: 1
-id: balanced
-name: Balanced
-benchmark: $SPX
-allocation:
-  type: target_weights
-  positions:
-    AAPL: "0.600000"
-    MSFT: "0.400000"
+                """apiVersion: v1
+kind: Strategy
+metadata:
+  name: balanced
+  display_name: Balanced
+spec:
+  benchmark: $SPX
+  allocation:
+    type: target_weights
+    positions:
+      AAPL: "0.600000"
+      MSFT: "0.400000"
 """,
                 encoding='utf-8',
             )
@@ -66,15 +70,106 @@ allocation:
             with self.assertRaisesRegex(ValueError, 'weights must total 1.0'):
                 load_strategy(path)
 
+    def test_yaml_loader_rejects_duplicate_nested_keys(self) -> None:
+        """Reject ambiguous YAML keys and report the source path."""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'account.yaml'
+            path.write_text(
+                """apiVersion: v1
+kind: Portfolio
+metadata:
+  name: sample
+  display_name: First
+  display_name: Second
+spec:
+  broker: example
+  account_id: sample
+  base_currency: USD
+""",
+                encoding='utf-8',
+            )
+            with self.assertRaises(ValueError) as context:
+                load_portfolio(path)
+
+        self.assertIn('account.yaml', str(context.exception))
+        self.assertIn("duplicate key 'display_name'", str(context.exception))
+
+    def test_yaml_loader_rejects_multiple_documents(self) -> None:
+        """Keep canonical storage to exactly one manifest per YAML file."""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'resources.yaml'
+            path.write_text(
+                """apiVersion: v1
+kind: Portfolio
+metadata: {name: first, display_name: First}
+spec: {broker: example, account_id: first, base_currency: USD}
+---
+apiVersion: v1
+kind: Portfolio
+metadata: {name: second, display_name: Second}
+spec: {broker: example, account_id: second, base_currency: USD}
+""",
+                encoding='utf-8',
+            )
+            with self.assertRaisesRegex(ValueError, 'expected a single document'):
+                load_portfolio(path)
+
+    def test_manifest_discovery_does_not_depend_on_filename(self) -> None:
+        """Resolve a Portfolio by kind after its conventional file is renamed."""
+        with tempfile.TemporaryDirectory() as directory:
+            portfolio_directory = create_portfolio(Path(directory), 'sample')
+            original = portfolio_directory / 'portfolio.yaml'
+            renamed = portfolio_directory / 'account-details.yaml'
+            original.rename(renamed)
+
+            path, manifest = find_manifest(
+                portfolio_directory, 'Portfolio', expected_name='sample'
+            )
+
+        self.assertEqual(path.name, 'account-details.yaml')
+        self.assertEqual(manifest.metadata.name, 'sample')
+
+    def test_manifest_dispatch_rejects_legacy_and_invalid_envelopes(self) -> None:
+        """Require the exact v1 API and Portfolio kind discriminator."""
+        valid = """apiVersion: v1
+kind: Portfolio
+metadata: {name: sample, display_name: Sample}
+spec: {broker: example, account_id: sample, base_currency: USD}
+"""
+        invalid_documents = {
+            'numeric API version': valid.replace('apiVersion: v1', 'apiVersion: 1'),
+            'wrong kind': valid.replace('kind: Portfolio', 'kind: Strategy'),
+            'legacy version': valid.replace('apiVersion: v1', 'schema_version: 1'),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'account.yaml'
+            for label, document in invalid_documents.items():
+                with self.subTest(label=label):
+                    path.write_text(document, encoding='utf-8')
+                    with self.assertRaises((TypeError, ValueError)):
+                        load_portfolio(path)
+
+    def test_manifest_discovery_rejects_duplicate_kinds(self) -> None:
+        """Reject two current Portfolio manifests in one resource directory."""
+        with tempfile.TemporaryDirectory() as directory:
+            portfolio_directory = create_portfolio(Path(directory), 'sample')
+            duplicate = portfolio_directory / 'duplicate.yaml'
+            duplicate.write_text(
+                (portfolio_directory / 'portfolio.yaml').read_text(), encoding='utf-8'
+            )
+
+            with self.assertRaisesRegex(ValueError, 'multiple Portfolio manifests'):
+                find_manifest(portfolio_directory, 'Portfolio')
+
     def test_generated_sp500_strategy_is_complete(self) -> None:
         """Validate the committed direct-replication allocation."""
         strategy_path = (
             Path(__file__).parents[1]
-            / 'sample-data/strategies/SnP500-direct/strategy.yaml'
+            / 'sample-data/strategy/SnP500-direct/strategy.yaml'
         )
         strategy = load_strategy(strategy_path)
 
-        self.assertEqual(strategy.id, 'SnP500-direct')
+        self.assertEqual(strategy.metadata.name, 'SnP500-direct')
         self.assertEqual(len(strategy.target_weights), 503)
         self.assertEqual(sum(strategy.target_weights.values()), Decimal(1))
         self.assertNotIn('SPY', strategy.target_weights)
@@ -117,12 +212,18 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
         with self.assertRaises(ValidationError):
             Portfolio.model_validate(
                 {
-                    'id': 'etrade-roth-ira',
-                    'name': 'Roth IRA',
-                    'broker': 'etrade',
-                    'account_id': 'local-account',
-                    'base_currency': 'USD',
-                    'curreny': 'USD',
+                    'apiVersion': 'v1',
+                    'kind': 'Portfolio',
+                    'metadata': {
+                        'name': 'etrade-roth-ira',
+                        'display_name': 'Roth IRA',
+                    },
+                    'spec': {
+                        'broker': 'etrade',
+                        'account_id': 'local-account',
+                        'base_currency': 'USD',
+                        'curreny': 'USD',
+                    },
                 }
             )
 
@@ -131,12 +232,18 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
         with self.assertRaises(ValidationError):
             Portfolio.model_validate(
                 {
-                    'id': 'etrade-roth-ira',
-                    'name': 'Roth IRA',
-                    'broker': 'etrade',
-                    'account_id': 'local-account',
-                    'base_currency': 'USD',
-                    'strategy': 'SnP500-direct',
+                    'apiVersion': 'v1',
+                    'kind': 'Portfolio',
+                    'metadata': {
+                        'name': 'etrade-roth-ira',
+                        'display_name': 'Roth IRA',
+                    },
+                    'spec': {
+                        'broker': 'etrade',
+                        'account_id': 'local-account',
+                        'base_currency': 'USD',
+                        'strategy': 'SnP500-direct',
+                    },
                 }
             )
 
@@ -158,9 +265,9 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
             portfolio_directory = create_portfolio(Path(directory), 'etrade-brokerage')
             portfolio = load_portfolio(portfolio_directory / 'portfolio.yaml')
 
-        self.assertEqual(portfolio.id, 'etrade-brokerage')
-        self.assertEqual(portfolio.broker, 'etrade')
-        self.assertEqual(portfolio.account_id, 'etrade-brokerage')
+        self.assertEqual(portfolio.metadata.name, 'etrade-brokerage')
+        self.assertEqual(portfolio.spec.broker, 'etrade')
+        self.assertEqual(portfolio.spec.account_id, 'etrade-brokerage')
 
     def test_import_opening_positions_preserves_source_and_writes_ledger(
         self,

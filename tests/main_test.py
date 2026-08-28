@@ -81,6 +81,26 @@ class TestCLI(unittest.TestCase):
             {'AAPL', 'MSFT'}, (2025, 2025), Interval.HOURLY
         )
 
+    def test_validate_reports_complete_data_summary(self) -> None:
+        """Dispatch side-effect-free data-root validation and print its summary."""
+        data_directory = cli.Path('test-data')
+        summary = Mock()
+        summary.message.return_value = 'Validated sample data.'
+        stdout = io.StringIO()
+        with (
+            patch.object(sys, 'argv', [cli.CLI_NAME, 'validate']),
+            patch.object(cli, 'data_directory', return_value=data_directory),
+            patch.object(
+                cli, 'validate_data_root', return_value=summary
+            ) as validate_mock,
+            redirect_stdout(stdout),
+        ):
+            result = cli.main()
+
+        self.assertEqual(result, 0)
+        validate_mock.assert_called_once_with(data_directory)
+        self.assertEqual(stdout.getvalue(), 'Validated sample data.\n')
+
     def test_create_portfolio_and_import_stocks(self) -> None:
         """Create a portfolio before importing its opening positions."""
         arguments = [
@@ -92,7 +112,7 @@ class TestCLI(unittest.TestCase):
             'stocks.csv',
         ]
         data_directory = cli.Path('test-data')
-        portfolio_directory = data_directory / 'portfolios' / 'etrade-brokerage'
+        portfolio_directory = data_directory / 'portfolio' / 'etrade-brokerage'
         with (
             patch.object(sys, 'argv', arguments),
             patch.object(cli, 'data_directory', return_value=data_directory),
@@ -116,7 +136,7 @@ class TestCLI(unittest.TestCase):
             id='assignment-test',
             effective_at=effective_at,
             strategy=StrategyRevisionReference(
-                id='SnP500-direct', revision=f'sha256:{"a" * 64}'
+                name='SnP500-direct', revision=f'sha256:{"a" * 64}'
             ),
             reason='Adopt direct replication',
         )
