@@ -324,6 +324,6 @@ rounding.
 
 ## CLI usage
 
-See the [portfolio CLI guide](cli-portfolio.md) and the [strategy CLI
-guide](cli-strategy.md). General invocation and data-root selection are documented
-in the [CLI overview](cli.md).
+See the [validation CLI guide](cli-validate.md), [portfolio CLI
+guide](cli-portfolio.md), and [strategy CLI guide](cli-strategy.md). General
+invocation and data-root selection are documented in the [CLI overview](cli.md).

@@ -54,7 +54,8 @@ root = "~/PersonalProjects/py-fund-manager-data"
 
 See [portfolio/README.md](portfolio/README.md) for the sample portfolio contents
 and the [CLI overview](../docs/cli.md#data-root) for configuration installation
-and path resolution.
+and path resolution. Run the [validation command](../docs/cli-validate.md) after
+selecting this or a private data root.
 
 Private-repo permissions restrict who can fetch the repo, but they do not encrypt
 its local files, Git history, or backups. Apply suitable encryption, backup, and

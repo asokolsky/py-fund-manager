@@ -38,7 +38,8 @@ See [planned work](docs/todo.md) for capabilities that are not implemented yet.
 - [Planned work](docs/todo.md) tracks unimplemented capabilities and open work.
 - [Sample data](sample-data/README.md) explains fictional examples and private
   data roots.
-- [Command-line interface](docs/cli.md) links command-specific usage guides.
+- [Command-line interface](docs/cli.md) links command-specific usage guides,
+  including [complete data-root validation](docs/cli-validate.md).
 - [Sources](docs/sources.md) lists external references.
 
 ## Per-user configuration
