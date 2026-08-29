@@ -83,9 +83,9 @@ mise run py-fund-manager -- \
   --withdraw 5000.00
 ```
 
-`--contribute` and `--withdraw` accept nonnegative amounts with at most two
-decimal places in the portfolio's base currency and are mutually exclusive.
-They are planning assumptions, not confirmed cash transactions.
+`--contribute` and `--withdraw` accept nonnegative amounts with at most 18 integer
+digits and two decimal places in the portfolio's base currency. They are mutually
+exclusive planning assumptions, not confirmed cash transactions.
 
 Select a historical planning time with an ISO 8601 timestamp containing a
 timezone offset. The default is the current time:

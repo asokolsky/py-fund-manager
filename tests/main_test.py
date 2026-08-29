@@ -71,12 +71,16 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(cli.nonnegative_amount('100.00'), Decimal('100.00'))
         self.assertEqual(cli.nonnegative_amount('100.000'), Decimal('100.00'))
         self.assertEqual(cli.nonnegative_amount('0E-100'), Decimal('0.00'))
+        self.assertEqual(
+            cli.nonnegative_amount('999999999999999999'),
+            Decimal('999999999999999999.00'),
+        )
         with self.assertRaisesRegex(
             cli.ArgumentTypeError, 'fractions smaller than one cent'
         ):
             cli.nonnegative_amount('100.005')
-        with self.assertRaisesRegex(cli.ArgumentTypeError, 'too large'):
-            cli.nonnegative_amount('1E+30')
+        with self.assertRaisesRegex(cli.ArgumentTypeError, '18-digit limit'):
+            cli.nonnegative_amount('1E+18')
 
     def test_main_passes_parsed_download_arguments(self) -> None:
         """Pass parsed ticker, year, and interval values to the downloader."""

@@ -7,7 +7,7 @@ from datetime import date, datetime  # noqa: TC003 - Pydantic resolves these at 
 from decimal import Decimal
 from enum import StrEnum
 from itertools import pairwise
-from typing import Literal, Self
+from typing import Literal, Self, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -556,3 +556,32 @@ class RebalancePlan(BaseModel):
             msg = 'rebalance summary must reconcile exactly to its orders'
             raise ValueError(msg)
         return self
+
+
+MAX_CURRENCY_INTEGER_DIGITS = 18
+
+
+def normalize_cash_flow_amount(value: Decimal, name: str = 'amount') -> Decimal:
+    """Validate a nonnegative currency amount and express it exactly in cents."""
+    if not value.is_finite() or value < 0:
+        msg = f'{name} must be a finite nonnegative decimal number'
+        raise ValueError(msg)
+    sign, digits_tuple, exponent_value = value.as_tuple()
+    exponent = cast('int', exponent_value)  # Finite Decimals always use int here.
+    if not any(digits_tuple):
+        return Decimal('0.00')
+    integer_digits = max(len(digits_tuple) + exponent, 0)
+    if integer_digits > MAX_CURRENCY_INTEGER_DIGITS:
+        msg = f'{name} exceeds the {MAX_CURRENCY_INTEGER_DIGITS}-digit limit'
+        raise ValueError(msg)
+    digits = list(digits_tuple)
+    while exponent < -2 and digits and digits[-1] == 0:
+        digits.pop()
+        exponent += 1
+    if exponent < -2:
+        msg = f'{name} must not have fractions smaller than one cent'
+        raise ValueError(msg)
+    if exponent > -2:
+        digits.extend([0] * (exponent + 2))
+        exponent = -2
+    return Decimal((sign, tuple(digits), exponent))

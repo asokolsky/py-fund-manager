@@ -15,9 +15,33 @@ Year's Day market holiday. Starting with cash on that date gives the scenario a
 clear boundary before its first rebalance on January 3. Every later plan,
 simulated fill, and activity event can therefore use the committed timestamps
 and cached 2020 prices instead of the current clock or current market data. The
-March timestamps use Pacific Daylight Time (PDT), with offset `-07:00`. This is a
-reproducible simulation timeline, not a claim that a real account was opened in
-the year 2020.
+The March and June timestamps use Pacific Daylight Time (PDT), with offset
+`-07:00`. This is a reproducible simulation timeline, not a claim that a real
+account was opened in the year 2020.
+
+## Timeline
+
+Every financial event, plan, and execution uses an explicit Pacific timestamp:
+
+| Step | Simulated time | Expected boundary |
+| --- | --- | --- |
+| 0 | Current local time | Remove only generated Playground state from an earlier run. |
+| 1 | 2020-01-02 08:00 PST | Open the portfolio with USD 100,000 cash. |
+| 2 | 2020-01-02 08:00 PST | Make `mag7` the effective strategy from opening. |
+| 3 | 2020 price-history range | Cache daily prices from 2020-01-01 through 2020-12-31; no portfolio state changes. |
+| 4 | 2020-01-03 07:00 PST | Plan from the 2020-01-02 closing prices. |
+| 5 | 2020-01-03 13:00 PST | Execute the first plan at the 2020-01-03 close. |
+| 6 | After step 5 | Import fills timestamped 2020-01-03 13:00 PST. |
+| 7 | 2020-03-13 09:00 PDT | Import a confirmed USD 70 dividend. |
+| 8 | 2020-03-13 14:00 PDT | Plan, execute, and import the dividend rebalance. |
+| 9 | 2020-06-15 09:00 and 14:00 PDT | Import USD 5,000, then plan and execute its rebalance. |
+| 10 | After step 9 | Convert and import fills timestamped 2020-06-15 14:00 PDT. |
+
+Steps 1-6 use PST (`-08:00`). Daylight saving time is in effect for steps 7-10,
+so those timestamps use PDT (`-07:00`). Planning and execution in steps 8 and 9
+share a timestamp because the historical broker fills at the same eligible close
+used by each plan. Steps 6 and 10 happen after execution, but import fills with
+the execution timestamp rather than the wall-clock import time.
 
 ## 0. Reset an earlier Playground run
 
@@ -261,14 +285,115 @@ mise run py-fund-manager -- \
 Expected outcome: `rebalance-plan-2020-03-13.json` is created in the current
 directory from the persisted post-fill positions and dividend-adjusted cash. It
 contains seven Mag7 adjustment intents and the 2020-03-13T14:00:00-07:00 price
-provenance. Creating the plan does not change the ledger. After the plan is
-fulfilled and its confirmed executions are imported as in steps 5-6, the
-portfolio still holds all seven strategy securities and retains nonnegative
-residual cash below one cent.
+provenance. Creating the plan does not change the ledger.
 
-Fulfill the plan and import its executions as above. The regression verifies the
-second plan, historical fills, resulting positions, and nonnegative residual
-cash in [`playground_test.py`](../../../tests/playground_test.py).
+Execute the second plan at the same eligible close:
+
+```shell
+mise run py-fund-manager -- \
+  broker historical rebalance-plan-2020-03-13.json \
+  --as-of 2020-03-13T14:00:00-07:00 \
+  > executions-2020-03-13.json
+```
+
+Convert and import the confirmed fills:
+
+```shell
+jq -r '
+  (
+    ["occurred_at", "event", "asset", "quantity", "price", "fees", "external_id"],
+    (.[] | [.executed_at, .side, .ticker, .quantity, .price, (.fees // "0"), .id])
+  ) |
+  @csv
+' executions-2020-03-13.json > rebalance-2020-03-13.csv
+
+mise run py-fund-manager -- portfolio playground import rebalance-2020-03-13.csv
+```
+
+Expected outcome: `executions-2020-03-13.json` and
+`rebalance-2020-03-13.csv` are created in the current directory. The import
+preserves `portfolio/playground/imports/rebalance-2020-03-13.csv` and appends
+seven confirmed fills to `portfolio/playground/transactions.csv`. The portfolio
+still holds all seven strategy securities and retains nonnegative residual cash
+below one cent.
+
+The regression verifies the second plan, imports all historical fills, and checks
+the resulting positions and cash in
+[`playground_test.py`](../../../tests/playground_test.py).
+
+## 9. Contribute USD 5,000 and rebalance
+
+Record the confirmed contribution at 09:00 PDT on 2020-06-15:
+
+```shell
+printf '%s\n' \
+  'occurred_at,event,asset,amount,external_id' \
+  '2020-06-15T09:00:00-07:00,deposit,USD,5000.00,playground-contribution-1' \
+  > activity-2020-06-15.csv
+
+mise run py-fund-manager -- portfolio playground import activity-2020-06-15.csv
+```
+
+Expected outcome: `activity-2020-06-15.csv` is created in the current directory,
+preserved as `portfolio/playground/imports/activity-2020-06-15.csv`, and appended
+to `portfolio/playground/transactions.csv` as one USD 5,000 deposit. Available
+cash increases by exactly USD 5,000. This uses a confirmed ledger event, not the
+unconfirmed `rebalance --contribute` planning assumption.
+
+Generate the contribution rebalance at the 2020-06-15 close:
+
+```shell
+mise run py-fund-manager -- \
+  portfolio playground rebalance --as-of 2020-06-15T14:00:00-07:00 \
+  > rebalance-plan-2020-06-15.json
+```
+
+Expected outcome: `rebalance-plan-2020-06-15.json` is created from the persisted
+post-dividend positions and contribution-adjusted cash. It contains seven Mag7
+adjustment intents and does not modify the ledger.
+
+Execute the plan at the same eligible close:
+
+```shell
+mise run py-fund-manager -- \
+  broker historical rebalance-plan-2020-06-15.json \
+  --as-of 2020-06-15T14:00:00-07:00 \
+  > executions-2020-06-15.json
+```
+
+Expected outcome: `executions-2020-06-15.json` is created in the current
+directory with seven confirmed fills timestamped
+`2020-06-15T14:00:00-07:00`. Execution does not modify
+`portfolio/playground/transactions.csv`; the fills remain external results until
+step 10 imports them.
+
+## 10. Import the contribution-rebalance executions
+
+Convert and import the confirmed fills:
+
+```shell
+jq -r '
+  (
+    ["occurred_at", "event", "asset", "quantity", "price", "fees", "external_id"],
+    (.[] | [.executed_at, .side, .ticker, .quantity, .price, (.fees // "0"), .id])
+  ) |
+  @csv
+' executions-2020-06-15.json > rebalance-2020-06-15.csv
+
+mise run py-fund-manager -- portfolio playground import rebalance-2020-06-15.csv
+```
+
+Expected outcome: `rebalance-2020-06-15.csv` is created in the current directory
+from `executions-2020-06-15.json`. The import preserves
+`portfolio/playground/imports/rebalance-2020-06-15.csv` and appends seven
+confirmed fills to `portfolio/playground/transactions.csv`. The final portfolio
+holds all seven strategy securities and retains nonnegative residual cash below
+one cent.
+
+The regression imports the USD 5,000 contribution, verifies the exact cash
+increase, generates and executes the third plan without changing the ledger,
+then imports all seven fills and checks the final positions and residual cash in
+[`playground_test.py`](../../../tests/playground_test.py).
 
 ## Run the regression coverage
 

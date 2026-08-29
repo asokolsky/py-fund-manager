@@ -30,8 +30,8 @@ from .portfolio import (
     load_strategy,
     load_transactions,
 )
-from .rebalance import normalize_cash_flow_amount, rebalance_portfolio
-from .schemas import RebalancePlan
+from .rebalance import rebalance_portfolio
+from .schemas import RebalancePlan, normalize_cash_flow_amount
 from .strategy import (
     analyze_strategy,
     assign_strategy,
