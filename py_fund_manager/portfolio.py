@@ -84,7 +84,9 @@ TRANSACTION_FIELDS = (
     'fees',
     'external_id',
 )
-PORTFOLIO_SCAFFOLD_FILES = frozenset({'README.md', '.gitignore'})
+PORTFOLIO_SCAFFOLD_FILES = frozenset(
+    {'README.md', '.gitignore', '.py-fund-manager-documentation-only'}
+)
 
 ACTIVITY_SECURITY_EVENTS = {
     TransactionType.POSITION_ADJUSTMENT,
@@ -232,11 +234,24 @@ def import_activity(portfolio_directory: Path, source: Path) -> ActivityImportRe
         skipped += 1
 
     combined = [*existing, *additions]
-    validate_transaction_ledger(combined)
+    if additions and existing and additions[0].occurred_at < existing[-1].occurred_at:
+        incoming_transaction = additions[0]
+        previous = existing[-1]
+        msg = (
+            f'{source}: activity external_id {incoming_transaction.external_id!r} at '
+            f'{incoming_transaction.occurred_at.isoformat()} predates the latest '
+            'ledger event '
+            f'{previous.external_id or previous.id!r} at '
+            f'{previous.occurred_at.isoformat()}; activity imports are append-only'
+        )
+        raise ValueError(msg)
+    validate_transaction_ledger(combined, path=source)
     imports_directory = portfolio_directory / 'imports'
     imports_directory.mkdir(exist_ok=True)
     preserved_source = imports_directory / source.name
     if preserved_source.exists():
+        if preserved_source.read_bytes() == source.read_bytes() and not additions:
+            return ActivityImportResult(imported=0, skipped=skipped)
         msg = f'{preserved_source} already exists; source import was not replaced'
         raise FileExistsError(msg)
     _atomic_copy(source, preserved_source)

@@ -39,11 +39,11 @@ is used.
 mise run py-fund-manager -- \
   portfolio --create etrade-brokerage \
   import /path/to/private/opening.csv \
-  --as-of 2020-01-02T16:00:00Z
+  --as-of 2020-01-02T08:00:00-08:00
 ```
 
-The timestamp must be ISO 8601 with a UTC offset. Every generated ledger row uses
-the same timestamp.
+The timestamp must be ISO 8601 with a timezone offset. Every generated ledger
+row uses the same timestamp.
 
 ### Complete `opening.csv` example
 
@@ -113,15 +113,15 @@ Opening events and splits are not accepted in activity files.
 
 ```csv
 occurred_at,event,asset,quantity,amount,price,fees,external_id
-2020-03-13T12:00:00-04:00,dividend,USD,,24.60,,,etrade-dividend-84721
-2020-03-13T12:01:00-04:00,buy,AAPL,0.09,,273.33,0.00,etrade-trade-84722
+2020-03-13T09:00:00-07:00,dividend,USD,,24.60,,,etrade-dividend-84721
+2020-03-13T09:01:00-07:00,buy,AAPL,0.09,,273.33,0.00,etrade-trade-84722
 ```
 
 ### Columns
 
 | Column | Required | Meaning |
 | --- | --- | --- |
-| `occurred_at` | Yes | ISO 8601 event time with a UTC offset. |
+| `occurred_at` | Yes | ISO 8601 event time with a timezone offset. |
 | `event` | Yes | Supported broker event name. |
 | `asset` | Yes | Currency for cash events or ticker for security events. |
 | `quantity` | Security events | Security quantity. |
@@ -142,6 +142,7 @@ Supported cash events are:
 Cash-event assets must equal the portfolio base currency.
 
 Supported security events are:
+
 - `buy`,
 - `sell`,
 - `transfer_in`,
@@ -149,6 +150,12 @@ Supported security events are:
 - `position_adjustment`.
 
 Security events use the portfolio base currency.
+
+Activity imports are append-only and use `external_id` for idempotency. Repeating
+the same file, or importing an overlapping file containing identical known events,
+skips those events. Reusing an archived filename with different content fails.
+New events that predate the latest ledger event also fail; import broker activity
+in chronological batches.
 
 Buys and sells require either an exact `amount` or a `price`;
 when only a price is supplied, cash movement is derived as price times

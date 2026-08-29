@@ -71,6 +71,11 @@ exactly one current `Strategy`. Immutable files below `revisions/` are excluded
 from current-resource discovery. Canonical files contain exactly one manifest;
 multi-document YAML streams are rejected.
 
+Every subdirectory below `portfolio/` and `strategy/` is validated as a resource
+directory. A README alone does not disable validation. A documentation-only
+scenario must contain the explicit `.py-fund-manager-documentation-only` marker
+and may contain only that marker, `README.md`, and `.gitignore`.
+
 ## Data contracts
 
 [Schemas](schemas.md) defines the canonical Portfolio, Transaction, Strategy,

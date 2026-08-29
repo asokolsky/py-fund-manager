@@ -196,9 +196,10 @@ def _resource_directories(root: Path) -> list[Path]:
 
 
 def _is_documentation_only_directory(directory: Path) -> bool:
-    """Recognize documented scenarios that do not persist a resource fixture."""
+    """Recognize an explicitly marked documentation-only scenario."""
     entries = {path.name for path in directory.iterdir()}
-    return 'README.md' in entries and entries <= {'README.md', '.gitignore'}
+    marker = '.py-fund-manager-documentation-only'
+    return marker in entries and entries <= {marker, 'README.md', '.gitignore'}
 
 
 def _require_at_most_one_history(

@@ -13,7 +13,7 @@ Available commands:
 - [`portfolio`](cli-portfolio.md) creates portfolio metadata and imports opening
   snapshots and ongoing broker activity.
 - [`download`](cli-download.md) downloads historical market prices.
-- [`strategy`](cli-strategy.md) validates and analyzes standalone Strategy
+- [`strategy`](cli-strategy.md) validates and inspects standalone Strategy
   manifests; portfolio strategy operations inspect and change effective
   assignments.
 

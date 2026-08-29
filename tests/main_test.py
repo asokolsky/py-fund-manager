@@ -7,12 +7,11 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import UTC, datetime
 from decimal import Decimal
-from unittest.mock import Mock, call, patch
+from unittest.mock import Mock, patch
 
 from py_fund_manager import __main__ as cli
 from py_fund_manager.download import Interval
 from py_fund_manager.schemas import (
-    BrokerOrder,
     Execution,
     OrderSide,
     StrategyAssignment,
@@ -67,6 +66,14 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), f'{cli.__version__}\n')
         self.assertEqual(stderr.getvalue(), '')
 
+    def test_cash_flow_amount_rejects_sub_cent_precision(self) -> None:
+        """Reject contribution and withdrawal values smaller than one cent."""
+        self.assertEqual(cli.nonnegative_amount('100.00'), Decimal('100.00'))
+        with self.assertRaisesRegex(
+            cli.ArgumentTypeError, 'fractions smaller than one cent'
+        ):
+            cli.nonnegative_amount('100.005')
+
     def test_main_passes_parsed_download_arguments(self) -> None:
         """Pass parsed ticker, year, and interval values to the downloader."""
         arguments = [
@@ -87,137 +94,84 @@ class TestCLI(unittest.TestCase):
             {'AAPL', 'MSFT'}, (2025, 2025), Interval.HOURLY
         )
 
-    def test_historical_broker_executes_order_file(self) -> None:
-        """Parse an order and print the historical broker execution as JSON."""
-        submitted_at = datetime(2020, 1, 3, 15, tzinfo=UTC)
+    def test_historical_broker_executes_validated_plan(self) -> None:
+        """Execute a plan against its portfolio ledger and print fills as JSON."""
         executed_at = datetime(2020, 1, 3, 21, tzinfo=UTC)
-        order = BrokerOrder(
-            id='playground-order-1',
+        execution = Execution(
+            id='playground-order-1-fill-0001',
+            order_id='playground-order-1',
             ticker='AAPL',
             side=OrderSide.BUY,
             quantity=Decimal('190.254033'),
-            currency='USD',
-            submitted_at=submitted_at,
-        )
-        execution = Execution(
-            id='playground-order-1-fill-0001',
-            order_id=order.id,
-            ticker=order.ticker,
-            side=order.side,
-            quantity=order.quantity,
             price=Decimal('74.35749816894531'),
-            currency=order.currency,
+            currency='USD',
             executed_at=executed_at,
         )
         stdout = io.StringIO()
         with tempfile.TemporaryDirectory() as directory:
-            order_file = cli.Path(directory) / 'order.json'
-            order_file.write_text(order.model_dump_json(), encoding='utf-8')
+            data_root = cli.Path(directory)
+            plan_file = data_root / 'rebalance-plan.json'
+            plan_file.write_text('{}', encoding='utf-8')
+            plan = Mock(portfolio_id='playground')
+            portfolio = Mock()
+            transactions = [Mock()]
             broker = Mock()
-            broker.execute_order.return_value = (execution,)
+            execution_result = Mock(executions=(execution,))
             arguments = [
                 cli.CLI_NAME,
                 'broker',
                 'historical',
-                str(order_file),
+                str(plan_file),
                 '--as-of',
                 executed_at.isoformat(),
             ]
             with (
                 patch.object(sys, 'argv', arguments),
+                patch.object(cli, 'data_directory', return_value=data_root),
+                patch.object(cli, 'load_rebalance_plan', return_value=plan),
+                patch.object(
+                    cli, 'load_portfolio', return_value=portfolio
+                ) as load_portfolio,
+                patch.object(
+                    cli, 'load_transactions', return_value=transactions
+                ) as load_transactions,
                 patch.object(cli, 'HistoricalBroker', return_value=broker) as adapter,
+                patch.object(
+                    cli, 'execute_rebalance_plan', return_value=execution_result
+                ) as execute,
                 redirect_stdout(stdout),
             ):
-                result = cli.main()
+                cli_result = cli.main()
 
-        self.assertEqual(result, 0)
+        self.assertEqual(cli_result, 0)
         adapter.assert_called_once_with(executed_at)
-        broker.execute_order.assert_called_once_with(order)
+        load_portfolio.assert_called_once_with(
+            data_root / 'portfolio/playground/portfolio.yaml'
+        )
+        load_transactions.assert_called_once_with(
+            data_root / 'portfolio/playground/transactions.csv'
+        )
+        execute.assert_called_once_with(broker, portfolio, transactions, plan)
         self.assertIn('74.35749816894531', stdout.getvalue())
 
-    def test_historical_broker_executes_order_array(self) -> None:
-        """Execute a JSON order array in source order and flatten its fills."""
-        submitted_at = datetime(2020, 1, 3, 15, tzinfo=UTC)
-        executed_at = datetime(2020, 1, 3, 21, tzinfo=UTC)
-        orders = tuple(
-            BrokerOrder(
-                id=f'playground-order-{index}',
-                ticker=ticker,
-                side=OrderSide.BUY,
-                quantity=Decimal(index),
-                currency='USD',
-                submitted_at=submitted_at,
-            )
-            for index, ticker in enumerate(('AAPL', 'MSFT'), start=1)
-        )
-        executions = tuple(
-            Execution(
-                id=f'{order.id}-fill-0001',
-                order_id=order.id,
-                ticker=order.ticker,
-                side=order.side,
-                quantity=order.quantity,
-                price=Decimal(100),
-                currency=order.currency,
-                executed_at=executed_at,
-            )
-            for order in orders
-        )
-        stdout = io.StringIO()
-        with tempfile.TemporaryDirectory() as directory:
-            orders_file = cli.Path(directory) / 'orders.json'
-            orders_file.write_text(
-                '[' + ','.join(order.model_dump_json() for order in orders) + ']',
-                encoding='utf-8',
-            )
-            broker = Mock()
-            broker.execute_order.side_effect = (
-                (execution,) for execution in executions
-            )
-            arguments = [
-                cli.CLI_NAME,
-                'broker',
-                'historical',
-                str(orders_file),
-                '--as-of',
-                executed_at.isoformat(),
-            ]
-            with (
-                patch.object(sys, 'argv', arguments),
-                patch.object(cli, 'HistoricalBroker', return_value=broker),
-                redirect_stdout(stdout),
-            ):
-                result = cli.main()
-
-        self.assertEqual(result, 0)
-        self.assertEqual(
-            broker.execute_order.call_args_list,
-            [call(order) for order in orders],
-        )
-        self.assertEqual(
-            [execution['id'] for execution in cli.json.loads(stdout.getvalue())],
-            [execution.id for execution in executions],
-        )
-
-    def test_analyze_strategy_and_extract_tickers(self) -> None:
+    def test_show_strategy_and_list_tickers(self) -> None:
         """Summarize a strategy or emit a download-compatible ticker list."""
         strategy_file = (
             cli.Path(__file__).parents[1] / 'sample-data/strategy/mag7/strategy.yaml'
         )
-        for extra_arguments, expected in (
-            ((), 'name: mag7\n'),
-            (('--extract-tickers',), 'AAPL,AMZN,GOOGL,META,MSFT,NVDA,TSLA\n'),
+        for subcommand, expected in (
+            ('show', 'name: mag7\n'),
+            ('tickers', 'AAPL,AMZN,GOOGL,META,MSFT,NVDA,TSLA\n'),
         ):
             stdout = io.StringIO()
             arguments = [
                 cli.CLI_NAME,
                 'strategy',
-                'analyze',
+                subcommand,
                 str(strategy_file),
-                *extra_arguments,
             ]
             with (
-                self.subTest(arguments=extra_arguments),
+                self.subTest(subcommand=subcommand),
                 patch.object(sys, 'argv', arguments),
                 redirect_stdout(stdout),
             ):
@@ -326,7 +280,7 @@ class TestCLI(unittest.TestCase):
             'strategy',
             'set',
             'SnP500-direct',
-            '--effective-at',
+            '--as-of',
             '2026-09-01T00:00:00Z',
             '--reason',
             'Adopt direct replication',

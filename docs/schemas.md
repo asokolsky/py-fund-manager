@@ -11,7 +11,18 @@ Resource names begin with an ASCII letter or digit and may then contain ASCII
 letters, digits, periods, underscores, and hyphens. Path separators and relative
 path components are rejected.
 
+The links in each section identify both the Pydantic model that defines the
+schema and the application boundary that loads or constructs it. Pydantic field
+and model validators enforce local shape and arithmetic; loaders and data-root
+validation enforce cross-file identity, ordering, and reference rules.
+
 ## Portfolio
+
+Source: [`Portfolio` and `PortfolioSpec`](../py_fund_manager/schemas.py#L53)
+define the manifest. [`load_manifest`](../py_fund_manager/portfolio.py#L287)
+performs strict YAML dispatch and model validation, while
+[`find_manifest_in`](../py_fund_manager/portfolio.py#L374) enforces uniqueness
+and the containing-directory identity.
 
 ```yaml
 apiVersion: v1
@@ -37,16 +48,24 @@ portfolio directory name.
 
 ## Transaction
 
+Source: [`Transaction`](../py_fund_manager/schemas.py#L89) defines each ledger
+fact. [`load_transactions`](../py_fund_manager/portfolio.py#L412) validates CSV
+rows through that model, then
+[`validate_transaction_ledger`](../py_fund_manager/portfolio.py#L428) enforces
+ledger-wide chronology and unique identities. Opening and activity imports enter
+through [`import_opening_snapshot`](../py_fund_manager/portfolio.py#L150) and
+[`import_activity`](../py_fund_manager/portfolio.py#L195).
+
 `transactions.csv` has these columns:
 
 ```csv
 id,occurred_at,type,ticker,quantity,price,amount,cost_basis,currency,fees,external_id
-opening-000001,2026-08-26T12:00:00+00:00,opening_position,AAPL,12,,,2100.00,USD,,broker-position-1
+opening-000001,2026-08-26T09:00:00-07:00,opening_position,AAPL,12,,,2100.00,USD,,broker-position-1
 ```
 
 Rows must be chronological. `id` values and nonempty `external_id` values must
-each be unique across the ledger. Timestamps must include a UTC offset. Prices,
-amounts, cost basis, and fees cannot be negative.
+each be unique across the ledger. Timestamps must include a timezone offset.
+Prices, amounts, cost basis, and fees cannot be negative.
 
 `id` is the application's local ledger identity. `external_id` is optional in the
 canonical ledger but required for ongoing activity imports, where it identifies
@@ -77,6 +96,12 @@ implemented.
 
 ## Strategy
 
+Source: [`TargetAllocation`, `StrategySpec`, and
+`Strategy`](../py_fund_manager/schemas.py#L183) define the allocation and
+manifest. [`load_manifest`](../py_fund_manager/portfolio.py#L287) validates the
+document, and [`find_manifest_in`](../py_fund_manager/portfolio.py#L374) enforces
+the resource-directory identity.
+
 ```yaml
 apiVersion: v1
 kind: Strategy
@@ -103,6 +128,16 @@ Existing mixed-case identities such as `SnP500-direct` remain valid.
 
 ## StrategyHistory
 
+Source: [`StrategyRevisionReference`, `StrategyAssignment`, and
+`StrategyHistory`](../py_fund_manager/schemas.py#L261) define references and
+ordered assignments. [`load_strategy_history`](../py_fund_manager/strategy.py#L109)
+loads the manifest, [`effective_assignment`](../py_fund_manager/strategy.py#L118)
+selects an assignment for a requested time, and
+[`load_strategy_revision`](../py_fund_manager/strategy.py#L90) enforces revision
+identity and content integrity. Complete data-root validation checks directory
+identity and every referenced revision in
+[`_validate_portfolios`](../py_fund_manager/validation.py#L76).
+
 ```yaml
 apiVersion: v1
 kind: StrategyHistory
@@ -111,7 +146,7 @@ metadata:
 spec:
   assignments:
     - id: initial-strategy
-      effective_at: 2026-01-01T00:00:00Z
+      effective_at: 2026-01-01T09:00:00-08:00
       strategy:
         name: mag7
         revision: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -120,14 +155,23 @@ spec:
 
 `metadata.name` must equal the containing portfolio directory. The revision uses
 `sha256:` followed by 64 lowercase hexadecimal digits. Assignment IDs must be
-unique and nonempty. Effective times must include a UTC offset, appear in strictly
-increasing order, and cannot be shared. Reasons are optional nonempty text.
+unique and nonempty. Effective times must include a timezone offset, appear in
+strictly increasing order, and cannot be shared. Reasons are optional nonempty
+text.
 
 Each strategy name and revision must resolve to validated immutable strategy
 content. For a requested time, the active assignment is the last assignment whose
 `effective_at` is not later than that time.
 
 ## Rebalance plan
+
+Source: [`RebalanceOrder`, `RebalanceValuation`, `RebalanceSummary`, and
+`RebalancePlan`](../py_fund_manager/schemas.py#L430) define the complete output
+and its reconciliation validators.
+[`plan_rebalance`](../py_fund_manager/rebalance.py#L189) constructs the plan from
+validated portfolio state, strategy, and prices. Broker execution reloads JSON
+through [`load_rebalance_plan`](../py_fund_manager/__main__.py#L268), which runs
+the same Pydantic validation before any order is submitted.
 
 The rebalance command emits a validated JSON document to standard output:
 
@@ -140,9 +184,9 @@ The rebalance command emits a validated JSON document to standard output:
     "id": "SnP500-direct",
     "revision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   },
-  "generated_at": "2026-08-26T21:00:01Z",
+  "generated_at": "2026-08-26T14:00:01-07:00",
   "valuation": {
-    "as_of": "2026-08-26T21:00:00Z",
+    "as_of": "2026-08-26T14:00:00-07:00",
     "currency": "USD",
     "holdings_value": "95000.00",
     "available_cash": "5000.00",

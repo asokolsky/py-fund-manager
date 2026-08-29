@@ -9,13 +9,15 @@ The commands below assume the configured data root contains the committed
 [`mag7` strategy](../../strategy/mag7/README.md).
 
 Although these commands are run now, the Playground portfolio is opened at the
-historical effective time `2020-01-02T16:00:00Z`. January 2, 2020 was the first
-U.S. trading day of that year, after the New Year's Day market holiday. Starting
-with cash on that date gives the scenario a clear boundary before its first
-rebalance on January 3. Every later plan, simulated fill, and activity event can
-therefore use the committed timestamps and cached 2020 prices instead of the
-current clock or current market data. This is a reproducible simulation
-timeline, not a claim that a real account was opened in 2020.
+historical effective time `2020-01-02T08:00:00-08:00` in Pacific Standard Time
+(PST). January 2, 2020 was the first U.S. trading day of that year, after the New
+Year's Day market holiday. Starting with cash on that date gives the scenario a
+clear boundary before its first rebalance on January 3. Every later plan,
+simulated fill, and activity event can therefore use the committed timestamps
+and cached 2020 prices instead of the current clock or current market data. The
+March timestamps use Pacific Daylight Time (PDT), with offset `-07:00`. This is a
+reproducible simulation timeline, not a claim that a real account was opened in
+the year 2020.
 
 ## 0. Reset an earlier Playground run
 
@@ -45,7 +47,7 @@ Create the portfolio and import the committed
 ```sh
 mise run py-fund-manager -- \
   portfolio --create playground import tests/data/playground-opening.csv \
-  --as-of 2020-01-02T16:00:00Z
+  --as-of 2020-01-02T08:00:00-08:00
 ```
 
 The opening CSV contains:
@@ -62,7 +64,7 @@ this README and creates:
 - `portfolio/playground/portfolio.yaml` with `metadata.name: playground`, a USD
   base currency, and the Playground account identity;
 - `portfolio/playground/transactions.csv` with the USD 100,000 opening-cash
-  fact effective at `2020-01-02T16:00:00Z`;
+  fact effective at `2020-01-02T08:00:00-08:00`;
 - `portfolio/playground/imports/playground-opening.csv`, an unchanged preserved
   copy of the import source.
 
@@ -70,7 +72,7 @@ The command creates these files at the time it is run; `--as-of` records when
 the imported opening balance became effective in the simulated portfolio.
 
 The regression verifies creation and opening import in
-[`playground_test.py`](../../../tests/playground_test.py#L62-L70).
+[`playground_test.py`](../../../tests/playground_test.py).
 
 ## 2. Assign the strategy
 
@@ -80,7 +82,7 @@ time:
 ```shell
 mise run py-fund-manager -- \
   portfolio playground strategy set mag7 \
-  --effective-at 2020-01-02T16:00:00Z \
+  --as-of 2020-01-02T08:00:00-08:00 \
   --reason "Open the Playground portfolio"
 ```
 
@@ -91,9 +93,9 @@ to the immutable `mag7` revision under
 not replaced. Portfolio holdings and cash remain unchanged.
 
 The regression extracts the tickers from the same strategy manifest in
-[`playground_test.py`](../../../tests/playground_test.py#L48-L49) and creates its
+[`playground_test.py`](../../../tests/playground_test.py) and creates its
 assignment in
-[`playground_test.py`](../../../tests/playground_test.py#L72-L79).
+[`playground_test.py`](../../../tests/playground_test.py).
 
 ## 3. Cache the historical prices
 
@@ -102,7 +104,7 @@ Isolate the strategy securities:
 ```sh
 tickers=$(
   mise run py-fund-manager -- \
-    strategy analyze sample-data/strategy/mag7/strategy.yaml --extract-tickers
+    strategy tickers sample-data/strategy/mag7/strategy.yaml
 )
 ```
 
@@ -118,12 +120,12 @@ generated file per ticker at
 `stocks-by-ticker/interval=1d/ticker=TICKER/year=2020/data.parquet` and reports
 each file it writes. It does not create or change a portfolio.
 
-The Playground regression uses those generated partitions directly and skips with a
-download instruction when they are absent. It verifies that both planning and
-execution load prices from that layout in
-[`playground_test.py`](../../../tests/playground_test.py#L48-L102).
+The Playground regression creates equivalent deterministic Parquet partitions in
+a temporary directory. It exercises the same price-loading path without depending
+on downloaded files or skipping on a fresh clone. See
+[`playground_test.py`](../../../tests/playground_test.py).
 CLI download dispatch is covered in
-[`main_test.py`](../../../tests/main_test.py#L70-L88).
+[`main_test.py`](../../../tests/main_test.py).
 
 ## 4. Plan the first rebalance
 
@@ -133,90 +135,49 @@ eligible daily prices are the 2020-01-02 closes:
 ```shell
 mise run py-fund-manager -- \
   portfolio playground \
-  rebalance --as-of 2020-01-03T15:00:00Z \
+  rebalance --as-of 2020-01-03T07:00:00-08:00 \
   > rebalance-plan-2020-01-03.json
 ```
 
 Expected outcome: `rebalance-plan-2020-01-03.json` is created in the current
 directory. It is a strict JSON plan for `playground` containing the
-2020-01-03T15:00:00Z valuation, the effective `mag7` assignment, price
+2020-01-03T07:00:00-08:00 valuation, the effective `mag7` assignment, price
 provenance, and seven buy intents funded by the opening USD 100,000. Planning
 does not update `transactions.csv` or place orders.
 
 The regression verifies planning from the historical cache in
-[`playground_test.py`](../../../tests/playground_test.py#L81-L95).
+[`playground_test.py`](../../../tests/playground_test.py).
 
-## 5. Create broker orders
+## 5. Fulfill the plan using historical prices
 
-A rebalance plan contains portfolio-level intents. A broker receives a normalized
-order. Convert every intent into the `orders-2020-01-03.json` array:
-
-```shell
-jq '
-  [
-    .valuation as $valuation |
-    .orders | to_entries[] |
-    .key as $index |
-    .value as $order |
-    {
-      id: (
-        "playground-20200103T150000000000Z-" +
-        ("0000" + (($index + 1) | tostring))[-4:]
-      ),
-      ticker: $order.ticker,
-      side: $order.side,
-      quantity: $order.quantity,
-      currency: $valuation.currency,
-      submitted_at: $valuation.as_of
-    }
-  ]
-' rebalance-plan-2020-01-03.json > orders-2020-01-03.json
-```
-
-Expected outcome: `orders-2020-01-03.json` is created in the current directory
-as an array of seven normalized orders in plan order. No portfolio or broker
-state changes. The first element is this AAPL order:
-
-```json
-{
-  "id": "playground-20200103T150000000000Z-0001",
-  "ticker": "AAPL",
-  "side": "buy",
-  "quantity": "190.254033",
-  "currency": "USD",
-  "submitted_at": "2020-01-03T15:00:00Z"
-}
-```
-
-The regression verifies the exact normalized order fields in
-[`playground_test.py`](../../../tests/playground_test.py#L146-L152).
-
-## 6. Fulfill the orders using historical prices
-
-Submit the order array to the historical broker at the 2020-01-03 close:
+Submit the complete plan to the historical broker at the 2020-01-03 close:
 
 ```shell
 mise run py-fund-manager -- \
-  broker historical orders-2020-01-03.json --as-of 2020-01-03T21:00:00Z \
+  broker historical rebalance-plan-2020-01-03.json \
+  --as-of 2020-01-03T13:00:00-08:00 \
   > executions-2020-01-03.json
 ```
 
 Expected outcome: `executions-2020-01-03.json` is created in the current
 directory as an array containing one complete fill per order. The first fill has
 ID `playground-20200103T150000000000Z-0001-fill-0001`, its execution time is
-`2020-01-03T21:00:00Z`, and its price is the eligible AAPL close at that time.
-These simulations still do not append fills to the portfolio ledger.
+`2020-01-03T13:00:00-08:00`, and its price is the eligible AAPL close at that
+time. The command loads the portfolio and its transaction ledger, confirms that
+the plan still matches that ledger, validates every fill, and rejects an
+execution that would derive negative cash or incorrect positions. It prints
+confirmed executions but does not append them to the ledger.
 
 Planning used the AAPL close of `75.0875015258789` from 2020-01-02. The
 historical broker independently loads the latest price available at execution
 and fills the order at the different 2020-01-03 close of
 `74.35749816894531`. The regression requires every first-rebalance execution
 price to differ from its planning price in
-[`playground_test.py`](../../../tests/playground_test.py#L153-L159). The
+[`playground_test.py`](../../../tests/playground_test.py). The
 interactive command is covered in
-[`main_test.py`](../../../tests/main_test.py#L90-L136).
+[`main_test.py`](../../../tests/main_test.py).
 
-## 7. Import confirmed executions
+## 6. Import confirmed executions
 
 Convert the seven confirmed fills into the canonical activity CSV:
 
@@ -258,16 +219,16 @@ file skips the known events instead of duplicating them.
 The activity file contains one `buy` or `sell` row per confirmed execution, not
 the estimated prices from `rebalance-plan-2020-01-03.json`. The regression writes
 and imports all seven confirmed fills in
-[`playground_test.py`](../../../tests/playground_test.py#L102-L108).
+[`playground_test.py`](../../../tests/playground_test.py).
 
-## 8. Import later account activity
+## 7. Import later account activity
 
 Create an activity file for a USD 70 dividend:
 
 ```shell
 printf '%s\n' \
   'occurred_at,event,asset,amount,external_id' \
-  '2020-03-13T16:00:00Z,dividend,USD,70.00,playground-dividend-1' \
+  '2020-03-13T09:00:00-07:00,dividend,USD,70.00,playground-dividend-1' \
   > activity-2020-03-13.csv
 ```
 
@@ -285,47 +246,36 @@ appends one USD 70 dividend fact to
 exactly USD 70; security quantities do not change.
 
 The regression verifies the import and the USD 70 cash increase in
-[`playground_test.py`](../../../tests/playground_test.py#L110-L120).
+[`playground_test.py`](../../../tests/playground_test.py).
 
-## 9. Rebalance again
+## 8. Rebalance again
 
 Generate a second plan from the persisted positions and dividend-adjusted cash:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio playground rebalance --as-of 2020-03-13T21:00:00Z \
+  portfolio playground rebalance --as-of 2020-03-13T14:00:00-07:00 \
   > rebalance-plan-2020-03-13.json
 ```
 
 Expected outcome: `rebalance-plan-2020-03-13.json` is created in the current
 directory from the persisted post-fill positions and dividend-adjusted cash. It
-contains seven Mag7 adjustment intents and the 2020-03-13T21:00:00Z price
-provenance. Creating the plan does not change the ledger. After those orders are
-fulfilled and their confirmed executions are imported as in steps 5-7, the
+contains seven Mag7 adjustment intents and the 2020-03-13T14:00:00-07:00 price
+provenance. Creating the plan does not change the ledger. After the plan is
+fulfilled and its confirmed executions are imported as in steps 5-6, the
 portfolio still holds all seven strategy securities and retains nonnegative
 residual cash below one cent.
 
-Create and fulfill each normalized order as above. The regression verifies the
+Fulfill the plan and import its executions as above. The regression verifies the
 second plan, historical fills, resulting positions, and nonnegative residual
-cash in
-[`playground_test.py`](../../../tests/playground_test.py#L122-L165).
+cash in [`playground_test.py`](../../../tests/playground_test.py).
 
 ## Run the regression coverage
 
-Download the generated price cache, then run the Playground regression together
-with its supporting portfolio, rebalance, and strategy suites:
+Run the hermetic Playground regression together with its supporting portfolio,
+rebalance, and strategy suites:
 
 ```shell
-mag7_tickers=$(
-  mise run py-fund-manager -- \
-    strategy analyze sample-data/strategy/mag7/strategy.yaml \
-    --extract-tickers
-)
-
-mise run py-fund-manager -- \
-  download 2020 \
-  --tickers="$mag7_tickers"
-
 mise exec -- uv run -m unittest -v \
   tests.main_test \
   tests.playground_test \

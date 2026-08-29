@@ -453,6 +453,7 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
             import_activity(portfolio_directory, first)
 
             result = import_activity(portfolio_directory, second)
+            repeated = import_activity(portfolio_directory, first)
             transactions = load_transactions(portfolio_directory / 'transactions.csv')
             with self.assertRaisesRegex(ValueError, 'conflicts with the existing'):
                 import_activity(portfolio_directory, conflicting)
@@ -462,7 +463,41 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
 
         self.assertEqual(result.imported, 0)
         self.assertEqual(result.skipped, 1)
+        self.assertEqual(repeated.imported, 0)
+        self.assertEqual(repeated.skipped, 1)
         self.assertEqual(len(transactions), 2)
+
+    def test_import_activity_explains_append_only_ordering(self) -> None:
+        """Name user-facing facts when an import predates the current ledger."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            opening = root / 'opening.csv'
+            opening.write_text('asset,amount\nUSD,1000.00\n', encoding='utf-8')
+            march = root / 'march.csv'
+            march.write_text(
+                'occurred_at,event,asset,amount,external_id\n'
+                '2020-03-13T09:00:00-07:00,dividend,USD,24.60,DIV-MAR\n',
+                encoding='utf-8',
+            )
+            february = root / 'february.csv'
+            february.write_text(
+                'occurred_at,event,asset,amount,external_id\n'
+                '2020-02-13T09:00:00-08:00,dividend,USD,20.00,DIV-FEB\n',
+                encoding='utf-8',
+            )
+            portfolio_directory = create_portfolio(root, 'etrade-brokerage')
+            import_opening_snapshot(
+                portfolio_directory,
+                opening,
+                occurred_at=datetime(2020, 1, 2, 16, tzinfo=UTC),
+            )
+            import_activity(portfolio_directory, march)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "february.csv.*'DIV-FEB'.*'DIV-MAR'.*append-only",
+            ):
+                import_activity(portfolio_directory, february)
 
 
 if __name__ == '__main__':

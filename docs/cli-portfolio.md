@@ -27,16 +27,16 @@ Bootstrap a new portfolio from canonical positions and cash during creation:
 mise run py-fund-manager -- \
   portfolio --create etrade-brokerage \
   import /path/to/private/opening.csv \
-  --as-of 2020-01-02T16:00:00Z
+  --as-of 2020-01-02T08:00:00-08:00
 ```
 
 The CSV uses `amount` for the opening balance and `quantity` for security
 positions. See the [Import Files reference](import-files.md#opening-snapshot-csv)
 for its complete column schema and validation rules. The command validates and
 preserves the source, then writes one ledger row per opening fact. `--as-of` is
-the broker statement's effective timestamp and must include a UTC offset; without
-it, the import time is used. Existing imports and transaction ledgers are not
-replaced.
+the broker statement's effective timestamp and must include a timezone offset;
+without it, the import time is used. Existing imports and transaction ledgers
+are not replaced.
 
 ## Import broker activity
 
@@ -83,17 +83,17 @@ mise run py-fund-manager -- \
   --withdraw 5000.00
 ```
 
-`--contribute` and `--withdraw` accept nonnegative amounts in the portfolio's
-base currency and are mutually exclusive. They are planning assumptions, not
-confirmed cash transactions.
+`--contribute` and `--withdraw` accept nonnegative amounts with at most two
+decimal places in the portfolio's base currency and are mutually exclusive.
+They are planning assumptions, not confirmed cash transactions.
 
-Select a historical planning time with an ISO 8601 timestamp containing a UTC
-offset. The default is the current time:
+Select a historical planning time with an ISO 8601 timestamp containing a
+timezone offset. The default is the current time:
 
 ```shell
 mise run py-fund-manager -- \
   portfolio etrade-brokerage rebalance \
-  --as-of 2026-08-26T12:00:00Z
+  --as-of 2026-08-26T14:00:00-07:00
 ```
 
 Prices come from the latest eligible `interval=1d` close. A daily close becomes
@@ -117,38 +117,57 @@ a warning rather than failing the plan.
 The planned integrated refresh workflow is:
 
 1. Resolve the portfolio's effective strategy and derive its current holdings.
-2. Build the required ticker set from the union of strategy positions and current
+1. Build the required ticker set from the union of strategy positions and current
    holdings, including holdings that must be sold because they are absent from the
    strategy.
-3. Refresh `interval=1d` data for the current year. Also refresh the previous year
+1. Refresh `interval=1d` data for the current year. Also refresh the previous year
    when it may contain the latest completed session, such as immediately after a
    year boundary.
-4. Download tickers concurrently with a bounded worker pool. Write each successful
+1. Download tickers concurrently with a bounded worker pool. Write each successful
    yearly partition atomically and preserve existing successful partitions when
    another ticker or year fails.
-5. Determine the expected latest completed trading session from an exchange
+1. Determine the expected latest completed trading session from an exchange
    calendar and the exchange timezone. Apply a provider-publication delay after
    the session close rather than assuming the final bar exists exactly at 16:00.
-6. Validate that every required ticker has a coherent price, observation date,
+1. Validate that every required ticker has a coherent price, observation date,
    availability time, currency, provider, retrieval time, and source partition for
    that expected session.
-7. Fail planning if any required observation is missing, conflicting, or stale.
+1. Fail planning if any required observation is missing, conflicting, or stale.
    A future explicit `--allow-stale-prices` option may permit a reviewed exception;
    stale data must never be accepted implicitly.
-8. Generate the plan only after the complete price set passes validation. Include
+1. Generate the plan only after the complete price set passes validation. Include
    the selected price provenance in every order as the current schema requires.
 
 This workflow will use the downloader and rebalance planner as shared application
 services rather than duplicating Yahoo Finance requests in the CLI dispatcher.
 
-The command writes the JSON order plan to standard output, so it can be saved
-for review or passed to a future broker adapter:
+The command writes the JSON order plan to standard output so it can be saved and
+reviewed:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio etrade-brokerage rebalance \
-  --contribute 10000.00 > order-plan.json
+  portfolio etrade-brokerage rebalance > rebalance-plan.json
 ```
+
+Execute a reviewed plan against cached historical prices at an explicit time:
+
+```shell
+mise run py-fund-manager -- \
+  broker historical rebalance-plan.json \
+  --as-of 2026-08-26T14:00:00-07:00 \
+  > executions-2026-08-26.json
+```
+
+The broker command loads the portfolio named by the plan and its current ledger.
+Before submitting orders, it verifies that the plan still matches the portfolio,
+cash, holdings, and price-availability boundary. It then validates complete fills,
+nonnegative resulting cash, and resulting positions. Confirmed executions are
+written as JSON but are not appended automatically; convert them to the canonical
+activity CSV and import that file after review.
+
+Plans containing `--contribute` or `--withdraw` cannot be executed. Those values
+are unconfirmed planning assumptions; record the completed cash movement in the
+ledger and generate a new plan first.
 
 Under the documented strict rebalance policy, strategy positions missing from the
 portfolio generate buys, while portfolio positions absent from the strategy have a

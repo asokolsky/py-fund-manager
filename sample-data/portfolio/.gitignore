@@ -6,3 +6,4 @@
 !playground/
 playground/*
 !playground/README.md
+!playground/.py-fund-manager-documentation-only

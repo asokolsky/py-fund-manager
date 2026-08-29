@@ -48,7 +48,7 @@ class TestStrategyHistory(unittest.TestCase):
         strategy = Strategy.model_validate(yaml.safe_load(STRATEGY_DOCUMENT))
 
         self.assertEqual(
-            analyze_strategy(strategy),
+            analyze_strategy(strategy).model_dump(mode='json'),
             {
                 'name': 'balanced',
                 'display_name': 'Balanced',

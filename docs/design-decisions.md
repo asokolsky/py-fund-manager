@@ -110,6 +110,13 @@ assumptions. The executor rejects such a plan rather than silently converting an
 assumption into a transaction. A cash movement must first be confirmed in the
 ledger, after which a new executable plan can be generated from that state.
 
+Normalized order IDs derive from the portfolio ID, the plan valuation timestamp
+expressed in UTC, and the order's stable position in the plan. Re-executing the
+same plan therefore produces the same order and execution identities. This makes
+confirmed execution imports idempotent; IDs are unique per portfolio and plan
+timestamp, not globally unique across independently generated plans with identical
+timestamps.
+
 ## Pydantic models are the schema authority
 
 All persisted inputs and structured outputs are defined as frozen Pydantic models

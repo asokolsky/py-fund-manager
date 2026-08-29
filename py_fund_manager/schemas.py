@@ -245,6 +245,19 @@ class Strategy(BaseModel):
         return self.spec.allocation.positions
 
 
+class StrategyAnalysis(BaseModel):
+    """Typed summary of one validated strategy."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True)
+
+    name: str
+    display_name: str
+    benchmark: str | None
+    allocation_type: Literal['target_weights']
+    position_count: int = Field(ge=1)
+    total_weight: Decimal
+
+
 class StrategyRevisionReference(BaseModel):
     """Identity of one immutable strategy revision."""
 
