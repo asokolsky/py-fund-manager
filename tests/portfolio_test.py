@@ -297,14 +297,14 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
         with tempfile.TemporaryDirectory() as directory:
             portfolio_directory = create_portfolio(
                 Path(directory),
-                'etrade-brokerage',
-                broker='etrade',
+                'brokerage',
+                broker='historical',
                 account_id='brokerage-123',
             )
             portfolio = load_portfolio(portfolio_directory / 'portfolio.yaml')
 
-        self.assertEqual(portfolio.metadata.name, 'etrade-brokerage')
-        self.assertEqual(portfolio.spec.broker, 'etrade')
+        self.assertEqual(portfolio.metadata.name, 'brokerage')
+        self.assertEqual(portfolio.spec.broker, 'historical')
         self.assertEqual(portfolio.spec.account_id, 'brokerage-123')
 
     def test_import_opening_snapshot_preserves_source_and_writes_ledger(
@@ -493,8 +493,8 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
             )
             portfolio_directory = create_portfolio(
                 root,
-                'etrade-brokerage',
-                broker='etrade',
+                'brokerage',
+                broker='historical',
                 account_id='brokerage',
             )
             import_opening_snapshot(
@@ -532,8 +532,8 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
             conflicting.write_text(row.replace('24.60', '25.00'), encoding='utf-8')
             portfolio_directory = create_portfolio(
                 root,
-                'etrade-brokerage',
-                broker='etrade',
+                'brokerage',
+                broker='historical',
                 account_id='brokerage',
             )
             import_opening_snapshot(
@@ -578,8 +578,8 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
             )
             portfolio_directory = create_portfolio(
                 root,
-                'etrade-brokerage',
-                broker='etrade',
+                'brokerage',
+                broker='historical',
                 account_id='brokerage',
             )
             import_opening_snapshot(

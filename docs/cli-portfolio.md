@@ -9,12 +9,12 @@ opening snapshot, and imports ongoing broker activity. See the
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio create etrade-brokerage \
-  --broker etrade \
+  portfolio create brokerage \
+  --broker historical \
   --account-id brokerage-123
 ```
 
-The command creates `portfolio/etrade-brokerage/portfolio.yaml` in the
+The command creates `portfolio/brokerage/portfolio.yaml` in the
 root selected by the required [global configuration](cli.md#data-root).
 `--broker` identifies the broker adapter or source, while `--account-id`
 preserves the broker's identifier for the account; neither value is inferred
@@ -48,8 +48,8 @@ Bootstrap a new portfolio from canonical positions and cash during creation:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio create etrade-brokerage \
-  --broker etrade \
+  portfolio create brokerage \
+  --broker historical \
   --account-id brokerage-123 \
   --as-of 2020-01-02T08:00:00-08:00 \
   --balance=@/path/to/private/opening.csv
@@ -69,7 +69,7 @@ Append confirmed events after the opening boundary:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio import etrade-brokerage \
+  portfolio import brokerage \
   /path/to/private/activity-2020-03.csv
 ```
 
@@ -89,14 +89,14 @@ Plan a rebalance without adding or removing cash:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio rebalance etrade-brokerage
+  portfolio rebalance brokerage
 ```
 
 Plan a rebalance after contributing USD 10,000:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio rebalance etrade-brokerage \
+  portfolio rebalance brokerage \
   --contribute 10000.00
 ```
 
@@ -104,7 +104,7 @@ Plan a USD 5,000 withdrawal and the sales needed to fund it:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio rebalance etrade-brokerage \
+  portfolio rebalance brokerage \
   --withdraw 5000.00
 ```
 
@@ -117,7 +117,7 @@ timezone offset. The default is the current time:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio rebalance etrade-brokerage \
+  portfolio rebalance brokerage \
   --as-of 2026-08-26T14:00:00-07:00
 ```
 
@@ -171,7 +171,7 @@ reviewed:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio rebalance etrade-brokerage > rebalance-plan.json
+  portfolio rebalance brokerage > rebalance-plan.json
 ```
 
 Execute a reviewed plan against cached historical prices at an explicit time:

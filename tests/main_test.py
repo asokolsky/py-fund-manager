@@ -36,9 +36,9 @@ class TestCLI(unittest.TestCase):
             cli.CLI_NAME,
             'portfolio',
             'create',
-            'etrade-brokerage',
+            'brokerage',
             '--broker',
-            'etrade',
+            'historical',
             '--account-id',
             'brokerage-123',
         ]
@@ -247,9 +247,9 @@ class TestCLI(unittest.TestCase):
                 cli.CLI_NAME,
                 'portfolio',
                 'create',
-                'etrade-brokerage',
+                'brokerage',
                 '--broker',
-                'etrade',
+                'historical',
                 '--account-id',
                 'brokerage-123',
                 '--as-of',
@@ -263,7 +263,7 @@ class TestCLI(unittest.TestCase):
             ):
                 result = cli.main()
 
-            portfolio_directory = data_directory / 'portfolio/etrade-brokerage'
+            portfolio_directory = data_directory / 'portfolio/brokerage'
             _, portfolio = cli.find_manifest(portfolio_directory, 'Portfolio')
             transactions = cli.load_transactions(
                 portfolio_directory / 'transactions.csv'
@@ -271,7 +271,7 @@ class TestCLI(unittest.TestCase):
             preserved = portfolio_directory / 'imports/opening.csv'
 
             self.assertEqual(result, 0)
-            self.assertEqual(portfolio.spec.broker, 'etrade')
+            self.assertEqual(portfolio.spec.broker, 'historical')
             self.assertEqual(portfolio.spec.account_id, 'brokerage-123')
             self.assertEqual(transactions[0].amount, Decimal(10000))
             self.assertEqual(transactions[1].ticker, 'AMAT')
@@ -286,14 +286,14 @@ class TestCLI(unittest.TestCase):
         """Reject creation when either required account identity is absent."""
         data_directory = cli.Path('test-data')
         for option, value in (
-            ('--broker', 'etrade'),
+            ('--broker', 'historical'),
             ('--account-id', 'brokerage-123'),
         ):
             arguments = [
                 cli.CLI_NAME,
                 'portfolio',
                 'create',
-                'etrade-brokerage',
+                'brokerage',
                 option,
                 value,
             ]
@@ -394,7 +394,7 @@ class TestCLI(unittest.TestCase):
         arguments = [
             cli.CLI_NAME,
             'portfolio',
-            'etrade-brokerage',
+            'brokerage',
         ]
         with (
             patch.object(sys, 'argv', arguments),
@@ -410,7 +410,7 @@ class TestCLI(unittest.TestCase):
             cli.CLI_NAME,
             'portfolio',
             'import',
-            'etrade-brokerage',
+            'brokerage',
             'activity.csv',
         ]
         data_directory = cli.Path('test-data')
@@ -428,7 +428,7 @@ class TestCLI(unittest.TestCase):
 
         self.assertEqual(result, 0)
         import_mock.assert_called_once_with(
-            data_directory / 'portfolio' / 'etrade-brokerage',
+            data_directory / 'portfolio' / 'brokerage',
             cli.Path('activity.csv'),
         )
         self.assertIn('Imported 2 activity events', stdout.getvalue())
@@ -449,7 +449,7 @@ class TestCLI(unittest.TestCase):
             cli.CLI_NAME,
             'portfolio',
             'strategy',
-            'etrade-brokerage',
+            'brokerage',
             'set',
             'SnP500-direct',
             '--as-of',
@@ -471,7 +471,7 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(result, 0)
         assign_mock.assert_called_once_with(
             data_directory,
-            'etrade-brokerage',
+            'brokerage',
             'SnP500-direct',
             effective_at,
             'Adopt direct replication',
@@ -483,7 +483,7 @@ class TestCLI(unittest.TestCase):
             cli.CLI_NAME,
             'portfolio',
             'rebalance',
-            'etrade-brokerage',
+            'brokerage',
             '--contribute',
             '10000.00',
             '--as-of',
@@ -506,7 +506,7 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(result, 0)
         rebalance_mock.assert_called_once_with(
             data_directory,
-            'etrade-brokerage',
+            'brokerage',
             datetime(2026, 8, 26, 12, tzinfo=UTC),
             contribution=Decimal('10000.00'),
             withdrawal=Decimal(0),
@@ -519,7 +519,7 @@ class TestCLI(unittest.TestCase):
             cli.CLI_NAME,
             'portfolio',
             'rebalance',
-            'etrade-brokerage',
+            'brokerage',
             '--withdraw',
             '5000.00',
             '--as-of',
@@ -541,7 +541,7 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(result, 0)
         rebalance_mock.assert_called_once_with(
             data_directory,
-            'etrade-brokerage',
+            'brokerage',
             datetime(2026, 8, 26, 12, tzinfo=UTC),
             contribution=Decimal(0),
             withdrawal=Decimal('5000.00'),
@@ -559,7 +559,7 @@ class TestCLI(unittest.TestCase):
                         cli.CLI_NAME,
                         'portfolio',
                         'rebalance',
-                        'etrade-brokerage',
+                        'brokerage',
                         option,
                         '100',
                     ],

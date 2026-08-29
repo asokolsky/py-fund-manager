@@ -181,7 +181,7 @@ The rebalance command emits a validated JSON document to standard output:
 ```json
 {
   "schema_version": 2,
-  "portfolio_id": "etrade-brokerage",
+  "portfolio_id": "brokerage",
   "strategy_assignment_id": "assignment-example",
   "strategy": {
     "id": "SnP500-direct",

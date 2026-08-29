@@ -42,8 +42,8 @@ is used.
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio create etrade-brokerage \
-  --broker etrade \
+  portfolio create brokerage \
+  --broker historical \
   --account-id brokerage-123 \
   --as-of 2020-01-02T08:00:00-08:00 \
   --balance=@/path/to/private/opening.csv
@@ -107,7 +107,7 @@ An activity CSV updates an existing portfolio after its opening boundary:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio import etrade-brokerage \
+  portfolio import brokerage \
   /path/to/private/activity-2020-03.csv
 ```
 

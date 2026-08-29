@@ -51,11 +51,11 @@ epilog = """Examples:
     python -m py_fund_manager download 2020 --tickers=@tickers.txt --interval=1w
     python -m py_fund_manager strategy show strategy.yaml
     python -m py_fund_manager strategy tickers strategy.yaml
-    python -m py_fund_manager portfolio create etrade-brokerage --broker etrade --account-id 1234
+    python -m py_fund_manager portfolio create brokerage --broker historical --account-id 1234
     python -m py_fund_manager portfolio create playground --broker historical --account-id playground --as-of 2020-01-02T08:00:00-08:00 --balance=USD:10000,AMAT:22
-    python -m py_fund_manager portfolio create etrade-brokerage --broker etrade --account-id 1234 --balance=@opening.csv
-    python -m py_fund_manager portfolio import etrade-brokerage activity.csv
-    python -m py_fund_manager portfolio strategy etrade-brokerage show
+    python -m py_fund_manager portfolio create brokerage --broker historical --account-id 1234 --balance=@opening.csv
+    python -m py_fund_manager portfolio import brokerage activity.csv
+    python -m py_fund_manager portfolio strategy brokerage show
 """
 
 log: logging.Logger | None = None
