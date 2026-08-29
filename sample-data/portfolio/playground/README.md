@@ -71,35 +71,28 @@ does not remove the shared historical-price cache or output files such as
 
 ## 1. Create the playground portfolio
 
-Create the portfolio and import the committed
-[`playground-opening.csv`](../../../tests/data/playground-opening.csv) snapshot:
+Create the portfolio with its opening cash balance:
 
 ```sh
 mise run py-fund-manager -- \
-  portfolio --create playground import tests/data/playground-opening.csv \
-  --as-of 2020-01-02T08:00:00-08:00
+  portfolio create playground \
+  --broker historical \
+  --account-id playground \
+  --as-of 2020-01-02T08:00:00-08:00 \
+  --balance=USD:100000
 ```
 
-The opening CSV contains:
-
-```csv
-asset,quantity,amount,cost_basis
-USD,,100000.00,
-```
-
-Expected outcome: the command reports that it created `playground` and imported
-one opening fact. Relative to the configured `sample-data/` root, it preserves
-this README and creates:
+Expected outcome: the command reports that it created `playground` and
+initialized one opening balance. Relative to the configured `sample-data/`
+root, it preserves this README and creates:
 
 - `portfolio/playground/portfolio.yaml` with `metadata.name: playground`, a USD
   base currency, and the Playground account identity;
 - `portfolio/playground/transactions.csv` with the USD 100,000 opening-cash
-  fact effective at `2020-01-02T08:00:00-08:00`;
-- `portfolio/playground/imports/playground-opening.csv`, an unchanged preserved
-  copy of the import source.
+  fact effective at `2020-01-02T08:00:00-08:00`.
 
 The command creates these files at the time it is run; `--as-of` records when
-the imported opening balance became effective in the simulated portfolio.
+the opening balance became effective in the simulated portfolio.
 
 The regression verifies creation and opening import in
 [`playground_test.py`](../../../tests/playground_test.py).
@@ -111,7 +104,7 @@ time:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio playground strategy set mag7 \
+  portfolio strategy playground set mag7 \
   --as-of 2020-01-02T08:00:00-08:00 \
   --reason "Open the Playground portfolio"
 ```
@@ -164,8 +157,8 @@ eligible daily prices are the 2020-01-02 closes:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio playground \
-  rebalance --as-of 2020-01-03T07:00:00-08:00 \
+  portfolio rebalance playground \
+  --as-of 2020-01-03T07:00:00-08:00 \
   > rebalance-plan-2020-01-03.json
 ```
 
@@ -235,7 +228,8 @@ jq -r '
 Import that CSV:
 
 ```sh
-mise run py-fund-manager -- portfolio playground import rebalance-2020-01-03.csv
+mise run py-fund-manager -- \
+  portfolio import playground rebalance-2020-01-03.csv
 ```
 
 Expected outcome: `rebalance-2020-01-03.csv` contains a header and seven rows in
@@ -268,7 +262,7 @@ generation command does not need to be run. Import the committed fixture:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio playground import tests/data/activity-2020-03-13.csv
+  portfolio import playground tests/data/activity-2020-03-13.csv
 ```
 
 Expected outcome: the command imports one event from the committed
@@ -288,7 +282,7 @@ Generate a second plan from the persisted positions and dividend-adjusted cash:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio playground rebalance --as-of 2020-03-13T14:00:00-07:00 \
+  portfolio rebalance playground --as-of 2020-03-13T14:00:00-07:00 \
   > rebalance-plan-2020-03-13.json
 ```
 
@@ -316,7 +310,8 @@ jq -r '
   @csv
 ' executions-2020-03-13.json > rebalance-2020-03-13.csv
 
-mise run py-fund-manager -- portfolio playground import rebalance-2020-03-13.csv
+mise run py-fund-manager -- \
+  portfolio import playground rebalance-2020-03-13.csv
 ```
 
 Expected outcome: `executions-2020-03-13.json` and
@@ -332,7 +327,7 @@ the resulting positions and cash in
 
 ## 9. Contribute USD 5,000 and rebalance
 
-The following command shows how the contribution activity fixture is generated:
+The following command shows how the deposit activity fixture is generated:
 
 ```shell
 printf '%s\n' \
@@ -347,7 +342,7 @@ generation command does not need to be run. Import the committed fixture:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio playground import tests/data/activity-2020-06-15.csv
+  portfolio import playground tests/data/activity-2020-06-15.csv
 ```
 
 Expected outcome: the command imports one event from the committed
@@ -355,18 +350,18 @@ Expected outcome: the command imports one event from the committed
 preserves it as `portfolio/playground/imports/activity-2020-06-15.csv`, and
 appends one USD 5,000 deposit to `portfolio/playground/transactions.csv`.
 Available cash increases by exactly USD 5,000. This uses a confirmed ledger
-event, not the unconfirmed `rebalance --contribute` planning assumption.
+event, so the cash exists in the ledger before rebalancing.
 
-Generate the contribution rebalance at the 2020-06-15 close:
+Generate the deposit-funded rebalance at the 2020-06-15 close:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio playground rebalance --as-of 2020-06-15T14:00:00-07:00 \
+  portfolio rebalance playground --as-of 2020-06-15T14:00:00-07:00 \
   > rebalance-plan-2020-06-15.json
 ```
 
 Expected outcome: `rebalance-plan-2020-06-15.json` is created from the persisted
-post-dividend positions and contribution-adjusted cash. It contains seven Mag7
+post-dividend positions and deposit-adjusted cash. It contains seven Mag7
 adjustment intents and does not modify the ledger.
 
 Execute the plan at the same eligible close:
@@ -384,7 +379,7 @@ directory with seven confirmed fills timestamped
 `portfolio/playground/transactions.csv`; the fills remain external results until
 step 10 imports them.
 
-## 10. Import the contribution-rebalance executions
+## 10. Import the deposit-funded rebalance executions
 
 Convert and import the confirmed fills:
 
@@ -397,7 +392,8 @@ jq -r '
   @csv
 ' executions-2020-06-15.json > rebalance-2020-06-15.csv
 
-mise run py-fund-manager -- portfolio playground import rebalance-2020-06-15.csv
+mise run py-fund-manager -- \
+  portfolio import playground rebalance-2020-06-15.csv
 ```
 
 Expected outcome: `rebalance-2020-06-15.csv` is created in the current directory
@@ -407,7 +403,7 @@ confirmed fills to `portfolio/playground/transactions.csv`. The final portfolio
 holds all seven strategy securities and retains nonnegative residual cash below
 one cent.
 
-The regression imports the USD 5,000 contribution, verifies the exact cash
+The regression imports the USD 5,000 deposit, verifies the exact cash
 increase, generates and executes the third plan without changing the ledger,
 then imports all seven fills and checks the final positions and residual cash in
 [`playground_test.py`](../../../tests/playground_test.py).
@@ -418,7 +414,7 @@ Generate a plan that reserves USD 1,000 for transfer out of the portfolio:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio playground rebalance \
+  portfolio rebalance playground \
   --as-of 2020-09-01T14:00:00-07:00 \
   --withdraw 1000.00 \
   > rebalance-plan-2020-09-01.json
@@ -460,7 +456,8 @@ jq -r '
   @csv
 ' executions-2020-09-02.json > rebalance-2020-09-02.csv
 
-mise run py-fund-manager -- portfolio playground import rebalance-2020-09-02.csv
+mise run py-fund-manager -- \
+  portfolio import playground rebalance-2020-09-02.csv
 ```
 
 Expected outcome: `rebalance-2020-09-02.csv` is created in the current directory,
@@ -485,7 +482,7 @@ generation command does not need to be run. Import the committed fixture:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio playground import tests/data/activity-2020-09-03.csv
+  portfolio import playground tests/data/activity-2020-09-03.csv
 ```
 
 Expected outcome: the command imports one event from the committed

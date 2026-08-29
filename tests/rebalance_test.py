@@ -158,6 +158,7 @@ class TestRebalance(unittest.TestCase):
             transaction('open-a', 'opening_position', ticker='AAPL', quantity='2'),
             transaction('open-b', 'opening_position', ticker='MSFT', quantity='1'),
             transaction('cash', 'opening_cash', amount='100'),
+            transaction('deposit', 'deposit', amount='50'),
         ]
         strategy = target_strategy({'AAPL': '0.6', 'NVDA': '0.4'})
         prices = {
@@ -176,7 +177,6 @@ class TestRebalance(unittest.TestCase):
             strategy,
             prices,
             as_of=AS_OF,
-            contribution=Decimal(50),
             generated_at=AS_OF,
         )
         orders = {order.ticker: order for order in plan.orders}
@@ -189,7 +189,7 @@ class TestRebalance(unittest.TestCase):
         self.assertEqual(plan.summary.estimated_sells, Decimal('50.00'))
         self.assertEqual(plan.summary.estimated_ending_cash, Decimal('0.00'))
         serialized = json.loads(plan.model_dump_json())
-        self.assertEqual(serialized['valuation']['contribution'], '50.00')
+        self.assertNotIn('contribution', serialized['valuation'])
         self.assertEqual(serialized['orders'][0]['estimated_notional'], '40.000000')
 
     def test_executable_amounts_preserve_residual_cash(self) -> None:
@@ -207,7 +207,7 @@ class TestRebalance(unittest.TestCase):
         )
 
         order = plan.orders[0]
-        self.assertEqual(plan.schema_version, 2)
+        self.assertEqual(plan.schema_version, 1)
         self.assertEqual(order.quantity, Decimal('33.333333'))
         self.assertEqual(
             order.estimated_notional, order.quantity * order.estimated_price
@@ -215,8 +215,8 @@ class TestRebalance(unittest.TestCase):
         self.assertEqual(plan.summary.estimated_buys, Decimal('99.999999'))
         self.assertEqual(plan.summary.estimated_ending_cash, Decimal('0.000001'))
 
-    def test_plan_rejects_subcent_cash_flow_amounts(self) -> None:
-        """Enforce currency precision for direct library callers."""
+    def test_plan_rejects_subcent_withdrawal(self) -> None:
+        """Enforce withdrawal precision for direct library callers."""
         strategy = target_strategy({'AAPL': '1'})
         with self.assertRaisesRegex(ValueError, 'fractions smaller than one cent'):
             plan_rebalance(
@@ -226,7 +226,7 @@ class TestRebalance(unittest.TestCase):
                 strategy,
                 {'AAPL': price_observation('AAPL', Decimal(100))},
                 as_of=AS_OF,
-                contribution=Decimal('100.005'),
+                withdrawal=Decimal('100.005'),
                 generated_at=AS_OF,
             )
 

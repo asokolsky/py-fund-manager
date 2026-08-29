@@ -69,9 +69,10 @@ does not contain actual account holdings or transaction history. Multiple
 portfolios may follow the same strategy.
 
 Applying a strategy to current portfolio state and market prices produces a
-proposed **order plan** for contribution, withdrawal, or rebalancing. The plan is
-advice; its orders become ledger transactions only after broker execution is
-confirmed.
+proposed **order plan** for a withdrawal or rebalancing. Confirmed deposits are
+recorded in the ledger before planning so their cash is available to invest. The
+plan is advice; its orders become ledger transactions only after broker execution
+is confirmed.
 
 A **strategy assignment** associates a portfolio with one immutable revision of a
 strategy from an effective time. It records investment intent, not broker activity,

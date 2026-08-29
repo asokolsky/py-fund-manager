@@ -466,7 +466,7 @@ class RebalanceOrder(BaseModel):
 
 
 class RebalanceValuation(BaseModel):
-    """Portfolio values and assumed cash flow used by a rebalance plan."""
+    """Portfolio values and planned withdrawal used by a rebalance plan."""
 
     model_config = ConfigDict(extra='forbid', frozen=True)
 
@@ -474,7 +474,6 @@ class RebalanceValuation(BaseModel):
     currency: str = Field(min_length=3, max_length=3)
     holdings_value: Decimal = Field(ge=0)
     available_cash: Decimal
-    contribution: Decimal = Field(default=Decimal(0), ge=0)
     withdrawal: Decimal = Field(default=Decimal(0), ge=0)
     target_portfolio_value: Decimal = Field(ge=0)
 
@@ -505,7 +504,7 @@ class RebalancePlan(BaseModel):
 
     model_config = ConfigDict(extra='forbid', frozen=True)
 
-    schema_version: Literal[2] = 2
+    schema_version: Literal[1] = 1
     portfolio_id: str = Field(min_length=1)
     strategy_assignment_id: str = Field(min_length=1)
     strategy: StrategyRevisionReference
@@ -533,7 +532,6 @@ class RebalancePlan(BaseModel):
         estimated_sells = sum((order.estimated_notional for order in sells), Decimal(0))
         expected_cash = (
             self.valuation.available_cash
-            + self.valuation.contribution
             - self.valuation.withdrawal
             + estimated_sells
             - estimated_buys

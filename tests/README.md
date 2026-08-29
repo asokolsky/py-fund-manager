@@ -40,10 +40,10 @@ mise exec -- uv run -m unittest -v \
   validation.
 - `rebalance_test.py` covers derived holdings, exact order and cash arithmetic,
   cached-price availability and provenance, deterministic inputs, and strict
-  contribution and withdrawal plans.
+  cash-funded and withdrawal plans.
 - `playground_test.py` opens a fictional portfolio with USD 100,000, persists
   three equal-weight Mag7 rebalances around a dividend and a confirmed USD 5,000
-  contribution, then sells enough on the next trading day to fund and record a
+  deposit, then sells enough on the next trading day to fund and record a
   confirmed USD 1,000 withdrawal. It executes each plan through the generic
   broker contract at deterministic historical prices. See the
   [Playground portfolio regression](../sample-data/portfolio/playground/README.md)

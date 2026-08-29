@@ -4,12 +4,12 @@ import json
 import logging
 import sys
 from argparse import (
-    REMAINDER,
     ArgumentParser,
     ArgumentTypeError,
     Namespace,
     RawTextHelpFormatter,
 )
+from contextlib import suppress
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -27,6 +27,7 @@ from .portfolio import (
     find_manifest,
     import_activity,
     import_opening_snapshot,
+    initialize_opening_balances,
     load_strategy,
     load_transactions,
 )
@@ -50,10 +51,11 @@ epilog = """Examples:
     python -m py_fund_manager download 2020 --tickers=@tickers.txt --interval=1w
     python -m py_fund_manager strategy show strategy.yaml
     python -m py_fund_manager strategy tickers strategy.yaml
-    python -m py_fund_manager portfolio --create etrade-brokerage
-    python -m py_fund_manager portfolio --create etrade-brokerage import opening.csv
-    python -m py_fund_manager portfolio etrade-brokerage import activity.csv
-    python -m py_fund_manager portfolio etrade-brokerage strategy show
+    python -m py_fund_manager portfolio create brokerage --broker historical --account-id 1234
+    python -m py_fund_manager portfolio create playground --broker historical --account-id playground --as-of 2020-01-02T08:00:00-08:00 --balance=USD:10000,AMAT:22
+    python -m py_fund_manager portfolio create brokerage --broker historical --account-id 1234 --balance=@opening.csv
+    python -m py_fund_manager portfolio import brokerage activity.csv
+    python -m py_fund_manager portfolio strategy brokerage show
 """
 
 log: logging.Logger | None = None
@@ -137,21 +139,53 @@ def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuse
     portfolio_parser = commands.add_parser(
         'portfolio', help='Create and manage portfolios'
     )
-    portfolio_parser.add_argument(
-        'portfolio_id',
-        nargs='?',
-        help='Existing portfolio ID for management commands',
+    portfolio_commands = portfolio_parser.add_subparsers(
+        dest='portfolio_command', required=True
     )
-    portfolio_parser.add_argument(
-        '--create',
-        metavar='PORTFOLIO_ID',
-        help='Create a portfolio using a lowercase kebab-case ID',
+    create_parser = portfolio_commands.add_parser('create')
+    create_parser.add_argument('portfolio_id')
+    create_parser.add_argument(
+        '--broker',
+        required=True,
+        help='Broker identifier for a newly created portfolio',
     )
-    portfolio_parser.add_argument(
-        'portfolio_arguments',
-        nargs=REMAINDER,
-        help='import or strategy operation and its arguments',
+    create_parser.add_argument(
+        '--account-id',
+        required=True,
+        help='Broker account identifier for a newly created portfolio',
     )
+    create_parser.add_argument(
+        '--as-of',
+        type=effective_time,
+        help='Timestamp for opening balances',
+    )
+    create_parser.add_argument(
+        '--balance',
+        type=balance_argument,
+        metavar='BALANCES|@FILE',
+        help='Comma-separated ASSET:VALUE balances or @ followed by a CSV file',
+    )
+    import_parser = portfolio_commands.add_parser('import')
+    import_parser.add_argument('portfolio_id')
+    import_parser.add_argument('source_file', type=Path)
+    portfolio_strategy_parser = portfolio_commands.add_parser('strategy')
+    portfolio_strategy_parser.add_argument('portfolio_id')
+    portfolio_strategy_commands = portfolio_strategy_parser.add_subparsers(
+        dest='strategy_command', required=True
+    )
+    portfolio_show_parser = portfolio_strategy_commands.add_parser('show')
+    portfolio_show_parser.add_argument('--as-of', type=effective_time)
+    portfolio_strategy_commands.add_parser('history')
+    portfolio_set_parser = portfolio_strategy_commands.add_parser('set')
+    portfolio_set_parser.add_argument('strategy_id')
+    portfolio_set_parser.add_argument('--as-of', type=effective_time)
+    portfolio_set_parser.add_argument('--reason')
+    portfolio_rebalance_parser = portfolio_commands.add_parser('rebalance')
+    portfolio_rebalance_parser.add_argument('portfolio_id')
+    portfolio_rebalance_parser.add_argument(
+        '--withdraw', type=nonnegative_amount, default=Decimal(0), dest='withdrawal'
+    )
+    portfolio_rebalance_parser.add_argument('--as-of', type=effective_time)
 
     args = parser.parse_args()
     if args.version:
@@ -220,45 +254,52 @@ def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuse
     if args.command == 'portfolio':
         try:
             directory = data_directory()
-            if args.create is not None:
-                action_arguments = (
-                    [] if args.portfolio_id is None else [args.portfolio_id]
-                ) + args.portfolio_arguments
-                action = (
-                    None
-                    if not action_arguments
-                    else _parse_create_action(action_arguments)
+            if args.portfolio_command == 'create':
+                if args.as_of is not None and args.balance is None:
+                    create_parser.error('--as-of requires --balance')
+                portfolio_directory = create_portfolio(
+                    directory,
+                    args.portfolio_id,
+                    broker=args.broker,
+                    account_id=args.account_id,
                 )
-                portfolio_directory = create_portfolio(directory, args.create)
-                print(f'Created portfolio {args.create} in {portfolio_directory}')
-                if action is not None:
-                    imported = import_opening_snapshot(
-                        portfolio_directory,
-                        action.source_file,
-                        occurred_at=action.as_of,
-                    )
-                    print(
-                        f'Imported {imported} opening facts from {action.source_file}'
-                    )
-            elif args.portfolio_id is not None:
-                action = _parse_portfolio_action(args.portfolio_arguments)
-                if action.portfolio_command == 'import':
-                    import_result = import_activity(
-                        directory / 'portfolio' / args.portfolio_id,
-                        action.source_file,
-                    )
-                    print(
-                        f'Imported {import_result.imported} activity events from '
-                        f'{action.source_file}; skipped {import_result.skipped}'
-                    )
-                    return 0
-                elif action.portfolio_command == 'strategy':
-                    return _strategy_command(directory, args.portfolio_id, action)
-                return _rebalance_command(directory, args.portfolio_id, action)
+                balance_message: str | None = None
+                try:
+                    if isinstance(args.balance, Path):
+                        imported = import_opening_snapshot(
+                            portfolio_directory,
+                            args.balance,
+                            occurred_at=args.as_of,
+                        )
+                        balance_message = (
+                            f'Imported {imported} opening facts from {args.balance}'
+                        )
+                    elif args.balance is not None:
+                        initialized = initialize_opening_balances(
+                            portfolio_directory,
+                            args.balance,
+                            occurred_at=args.as_of,
+                        )
+                        balance_message = f'Initialized {initialized} opening balances'
+                except OSError, TypeError, ValueError:
+                    _rollback_portfolio_creation(portfolio_directory)
+                    raise
+                print(f'Created portfolio {args.portfolio_id} in {portfolio_directory}')
+                if balance_message is not None:
+                    print(balance_message)
+            elif args.portfolio_command == 'import':
+                import_result = import_activity(
+                    directory / 'portfolio' / args.portfolio_id,
+                    args.source_file,
+                )
+                print(
+                    f'Imported {import_result.imported} activity events from '
+                    f'{args.source_file}; skipped {import_result.skipped}'
+                )
+            elif args.portfolio_command == 'strategy':
+                return _strategy_command(directory, args.portfolio_id, args)
             else:
-                portfolio_parser.error(
-                    '--create PORTFOLIO_ID or an existing portfolio ID is required'
-                )
+                return _rebalance_command(directory, args.portfolio_id, args)
         except (ConfigurationError, OSError, TypeError, ValueError) as error:
             log.log(logging.ERROR, '%s', error)
             return 1
@@ -275,6 +316,17 @@ def load_rebalance_plan(path: Path) -> RebalancePlan:
         return RebalancePlan.model_validate(document)
     except (OSError, TypeError, ValueError) as error:
         raise ValueError(f'{path}: invalid rebalance plan: {error}') from error
+
+
+def _rollback_portfolio_creation(portfolio_directory: Path) -> None:
+    """Remove only artifacts written by an unsuccessful creation command."""
+    for filename in ('transactions.csv', 'portfolio.yaml'):
+        (portfolio_directory / filename).unlink(missing_ok=True)
+    imports_directory = portfolio_directory / 'imports'
+    with suppress(OSError):
+        imports_directory.rmdir()
+    with suppress(OSError):
+        portfolio_directory.rmdir()
 
 
 def effective_time(value: str) -> datetime:
@@ -303,43 +355,43 @@ def nonnegative_amount(value: str) -> Decimal:
         raise ArgumentTypeError(str(error)) from error
 
 
-def _parse_create_action(arguments: list[str]) -> Namespace:
-    """Parse an optional action performed immediately after portfolio creation."""
-    parser = ArgumentParser(prog=f'{CLI_NAME} portfolio --create PORTFOLIO_ID')
-    commands = parser.add_subparsers(dest='command', required=True)
-    import_parser = commands.add_parser('import')
-    import_parser.add_argument('source_file', type=Path)
-    import_parser.add_argument('--as-of', type=effective_time)
-    return parser.parse_args(arguments)
+def balance_argument(value: str) -> dict[str, Decimal] | Path:
+    """Parse inline opening balances or an @-prefixed CSV path."""
+    if value.startswith('@'):
+        path_value = value[1:]
+        if not path_value:
+            msg = '@ must be followed by an opening balance file path'
+            raise ArgumentTypeError(msg)
+        path = Path(path_value).expanduser()
+        if not path.is_file():
+            msg = f"opening balance file '{path}' does not exist or is not a file"
+            raise ArgumentTypeError(msg)
+        return path
+    return opening_balances(value)
 
 
-def _parse_portfolio_action(arguments: list[str]) -> Namespace:
-    """Parse an operation for an existing portfolio."""
-    parser = ArgumentParser(prog=f'{CLI_NAME} portfolio PORTFOLIO_ID')
-    commands = parser.add_subparsers(dest='portfolio_command', required=True)
-    import_parser = commands.add_parser('import')
-    import_parser.add_argument('source_file', type=Path)
-    strategy_parser = commands.add_parser('strategy')
-    strategy_commands = strategy_parser.add_subparsers(
-        dest='strategy_command', required=True
-    )
-    show_parser = strategy_commands.add_parser('show')
-    show_parser.add_argument('--as-of', type=effective_time)
-    strategy_commands.add_parser('history')
-    set_parser = strategy_commands.add_parser('set')
-    set_parser.add_argument('strategy_id')
-    set_parser.add_argument('--as-of', type=effective_time)
-    set_parser.add_argument('--reason')
-    rebalance_parser = commands.add_parser('rebalance')
-    cash_flow = rebalance_parser.add_mutually_exclusive_group()
-    cash_flow.add_argument(
-        '--contribute', type=nonnegative_amount, default=Decimal(0), dest='contribution'
-    )
-    cash_flow.add_argument(
-        '--withdraw', type=nonnegative_amount, default=Decimal(0), dest='withdrawal'
-    )
-    rebalance_parser.add_argument('--as-of', type=effective_time)
-    return parser.parse_args(arguments)
+def opening_balances(value: str) -> dict[str, Decimal]:
+    """Parse comma-separated asset balances for portfolio creation."""
+    balances: dict[str, Decimal] = {}
+    for entry in value.split(','):
+        asset, separator, raw_amount = entry.partition(':')
+        asset = asset.strip().upper()
+        if not separator or not asset or not raw_amount.strip():
+            msg = 'balances must use ASSET:VALUE pairs separated by commas'
+            raise ArgumentTypeError(msg)
+        if asset in balances:
+            msg = f'duplicate opening balance for {asset}'
+            raise ArgumentTypeError(msg)
+        try:
+            amount = Decimal(raw_amount.strip())
+        except InvalidOperation as error:
+            msg = f'opening balance for {asset} must be a decimal number'
+            raise ArgumentTypeError(msg) from error
+        if not amount.is_finite() or amount < 0:
+            msg = f'opening balance for {asset} must be finite and nonnegative'
+            raise ArgumentTypeError(msg)
+        balances[asset] = amount
+    return balances
 
 
 def _strategy_command(directory: Path, portfolio_id: str, args: Namespace) -> int:
@@ -390,7 +442,6 @@ def _rebalance_command(directory: Path, portfolio_id: str, args: Namespace) -> i
         directory,
         portfolio_id,
         args.as_of or datetime.now(UTC),
-        contribution=args.contribution,
         withdrawal=args.withdrawal,
     )
     print(plan.model_dump_json(indent=2))
