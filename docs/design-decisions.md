@@ -105,10 +105,19 @@ requires fills to complete each submitted order exactly. Asynchronous order
 status, cancellation, and resumable partial-fill workflows remain future broker
 adapter work rather than implicit behavior in the common contract.
 
-Contribution and withdrawal values on a rebalance plan remain unconfirmed planning
-assumptions. The executor rejects such a plan rather than silently converting an
-assumption into a transaction. A cash movement must first be confirmed in the
-ledger, after which a new executable plan can be generated from that state.
+Contribution and withdrawal values on a rebalance plan remain unconfirmed
+planning assumptions, but their execution boundaries differ. The executor rejects
+a contribution plan because its buy orders would spend cash that is not yet in
+the ledger; the deposit must be confirmed first, after which a new executable plan
+is generated from that state.
+
+A withdrawal plan can be executed because its sell orders raise cash before the
+money leaves the portfolio. Confirmed fills must leave at least the planned
+withdrawal amount available. Execution produces only trade facts: it does not
+silently convert the assumption into a withdrawal transaction. The operator must
+import the fills and then import the separately confirmed withdrawal. Until that
+second import occurs, the ledger still treats the reserved cash as available, so
+a later plan could incorrectly reinvest money that has already left the account.
 
 Normalized order IDs derive from the portfolio ID, the plan valuation timestamp
 expressed in UTC, and the order's stable position in the plan. Re-executing the
