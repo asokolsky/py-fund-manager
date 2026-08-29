@@ -1,6 +1,7 @@
 """Tests for the py_fund_manager command-line entry point."""
 
 import io
+import os
 import sys
 import tempfile
 import unittest
@@ -88,7 +89,12 @@ class TestCLI(unittest.TestCase):
 
     def test_opening_balances_parse_assets_and_reject_ambiguity(self) -> None:
         """Normalize inline balances and reject duplicate or malformed assets."""
-        self.assertEqual(cli.balance_argument('@opening.csv'), cli.Path('opening.csv'))
+        with tempfile.TemporaryDirectory() as directory:
+            source = cli.Path(directory) / 'opening.csv'
+            source.write_text('asset,amount\nUSD,1\n', encoding='utf-8')
+            self.assertEqual(cli.balance_argument(f'@{source}'), source)
+            with patch.dict(os.environ, {'HOME': directory}):
+                self.assertEqual(cli.balance_argument('@~/opening.csv'), source)
         self.assertEqual(
             cli.opening_balances('usd:10000, AMAT:22'),
             {'USD': Decimal(10000), 'AMAT': Decimal(22)},
@@ -362,17 +368,22 @@ class TestCLI(unittest.TestCase):
                 'historical',
                 '--account-id',
                 'playground',
-                '--balance=@missing.csv',
+                f'--balance=@{data_directory / "invalid.csv"}',
             ]
+            (data_directory / 'invalid.csv').write_text(
+                'asset,amount\nEUR,100\n', encoding='utf-8'
+            )
+            stdout = io.StringIO()
             with (
                 patch.object(sys, 'argv', arguments),
                 patch.object(cli, 'data_directory', return_value=data_directory),
-                redirect_stdout(io.StringIO()),
+                redirect_stdout(stdout),
                 redirect_stderr(io.StringIO()),
             ):
                 result = cli.main()
 
             self.assertEqual(result, 1)
+            self.assertEqual(stdout.getvalue(), '')
             self.assertEqual(readme.read_text(), '# Playground\n')
             self.assertFalse((portfolio_directory / 'portfolio.yaml').exists())
             self.assertFalse((portfolio_directory / 'transactions.csv').exists())

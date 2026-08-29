@@ -36,10 +36,11 @@ mise run py-fund-manager -- \
 ```
 
 `--balance` accepts comma-separated `ASSET:VALUE` pairs. The asset matching the
-portfolio base currency is opening cash; every other asset is an opening
-position whose value is its quantity. Assets are normalized to uppercase and
-may appear only once. Inline balances write `transactions.csv` directly and do
-not create a preserved source below `imports/`.
+portfolio base currency is opening cash and follows its currency precision and
+size limits; every other asset is an opening position whose value is its
+quantity. Assets are normalized to uppercase and may appear only once. Inline
+balances write `transactions.csv` directly and do not create a preserved source
+below `imports/`.
 
 ## Import an opening snapshot
 

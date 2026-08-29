@@ -27,6 +27,7 @@ from py_fund_manager.schemas import (
     StrategyHistory,
     Transaction,
     TransactionType,
+    normalize_cash_flow_amount,
 )
 
 type Manifest = Portfolio | Strategy | StrategyHistory
@@ -226,12 +227,17 @@ def initialize_opening_balances(
         expected_name=portfolio_directory.name,
     )
     transactions: list[Transaction] = []
-    for index, (asset, value) in enumerate(balances.items(), start=1):
+    for index, (asset, raw_value) in enumerate(balances.items(), start=1):
         is_cash = asset == portfolio.spec.base_currency
         transaction_type = (
             TransactionType.OPENING_CASH
             if is_cash
             else TransactionType.OPENING_POSITION
+        )
+        value = (
+            normalize_cash_flow_amount(raw_value, 'opening cash')
+            if is_cash
+            else raw_value
         )
         try:
             transactions.append(

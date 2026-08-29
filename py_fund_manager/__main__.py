@@ -267,7 +267,6 @@ def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuse
                     broker=args.broker,
                     account_id=args.account_id,
                 )
-                print(f'Created portfolio {args.portfolio_id} in {portfolio_directory}')
                 balance_message: str | None = None
                 try:
                     if isinstance(args.balance, Path):
@@ -289,6 +288,7 @@ def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuse
                 except OSError, TypeError, ValueError:
                     _rollback_portfolio_creation(portfolio_directory)
                     raise
+                print(f'Created portfolio {args.portfolio_id} in {portfolio_directory}')
                 if balance_message is not None:
                     print(balance_message)
             elif args.portfolio_command == 'import':
@@ -362,11 +362,15 @@ def nonnegative_amount(value: str) -> Decimal:
 def balance_argument(value: str) -> dict[str, Decimal] | Path:
     """Parse inline opening balances or an @-prefixed CSV path."""
     if value.startswith('@'):
-        path = value[1:]
-        if not path:
+        path_value = value[1:]
+        if not path_value:
             msg = '@ must be followed by an opening balance file path'
             raise ArgumentTypeError(msg)
-        return Path(path)
+        path = Path(path_value).expanduser()
+        if not path.is_file():
+            msg = f"opening balance file '{path}' does not exist or is not a file"
+            raise ArgumentTypeError(msg)
+        return path
     return opening_balances(value)
 
 

@@ -397,6 +397,25 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
         self.assertEqual(transactions[1].ticker, 'AMAT')
         self.assertEqual(transactions[1].quantity, Decimal(22))
 
+    def test_initialize_opening_balances_validates_cash_precision(self) -> None:
+        """Apply cash-flow precision rules to inline opening cash."""
+        with tempfile.TemporaryDirectory() as directory:
+            portfolio_directory = create_portfolio(
+                Path(directory),
+                'playground',
+                broker='historical',
+                account_id='playground',
+            )
+
+            with self.assertRaisesRegex(ValueError, 'fractions smaller than one cent'):
+                initialize_opening_balances(
+                    portfolio_directory,
+                    {'USD': Decimal('100.005')},
+                    occurred_at=datetime(2020, 1, 2, 16, tzinfo=UTC),
+                )
+
+            self.assertFalse((portfolio_directory / 'transactions.csv').exists())
+
     def test_create_portfolio_reuses_documentation_only_directory(self) -> None:
         """Preserve tracked scaffolding while creating portfolio metadata."""
         with tempfile.TemporaryDirectory() as directory:
