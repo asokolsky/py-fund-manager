@@ -250,6 +250,8 @@ def import_activity(portfolio_directory: Path, source: Path) -> ActivityImportRe
     imports_directory.mkdir(exist_ok=True)
     preserved_source = imports_directory / source.name
     if preserved_source.exists():
+        # An archived source with missing ledger facts indicates external ledger
+        # editing; do not silently reconstruct only part of that prior import.
         if preserved_source.read_bytes() == source.read_bytes() and not additions:
             return ActivityImportResult(imported=0, skipped=skipped)
         msg = f'{preserved_source} already exists; source import was not replaced'

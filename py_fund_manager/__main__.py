@@ -27,11 +27,10 @@ from .portfolio import (
     find_manifest,
     import_activity,
     import_opening_snapshot,
-    load_portfolio,
     load_strategy,
     load_transactions,
 )
-from .rebalance import rebalance_portfolio
+from .rebalance import normalize_cash_flow_amount, rebalance_portfolio
 from .schemas import RebalancePlan
 from .strategy import (
     analyze_strategy,
@@ -178,7 +177,11 @@ def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuse
             directory = data_directory()
             plan = load_rebalance_plan(args.plan_file)
             portfolio_directory = directory / 'portfolio' / plan.portfolio_id
-            portfolio = load_portfolio(portfolio_directory / 'portfolio.yaml')
+            _, portfolio = find_manifest(
+                portfolio_directory,
+                'Portfolio',
+                expected_name=plan.portfolio_id,
+            )
             transactions = load_transactions(portfolio_directory / 'transactions.csv')
             broker = HistoricalBroker(args.as_of)
             result = execute_rebalance_plan(
@@ -294,13 +297,10 @@ def nonnegative_amount(value: str) -> Decimal:
     except InvalidOperation as error:
         msg = 'amount must be a decimal number'
         raise ArgumentTypeError(msg) from error
-    if not amount.is_finite() or amount < 0:
-        msg = 'amount must be a finite nonnegative decimal number'
-        raise ArgumentTypeError(msg)
-    if amount != amount.quantize(Decimal('0.01')):
-        msg = 'amount must not have fractions smaller than one cent'
-        raise ArgumentTypeError(msg)
-    return amount
+    try:
+        return normalize_cash_flow_amount(amount)
+    except ValueError as error:
+        raise ArgumentTypeError(str(error)) from error
 
 
 def _parse_create_action(arguments: list[str]) -> Namespace:

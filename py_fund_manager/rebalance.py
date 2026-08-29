@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, time
-from decimal import ROUND_CEILING, ROUND_DOWN, Decimal
+from decimal import ROUND_CEILING, ROUND_DOWN, Decimal, getcontext
 from pathlib import Path  # noqa: TC003 - used by runtime-configurable storage paths.
+from typing import cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import pyarrow.parquet as pq
@@ -38,6 +39,32 @@ from py_fund_manager.strategy import (
 CENT = Decimal('0.01')
 QUANTITY_INCREMENT = Decimal('0.000001')
 DAILY_CLOSE_TIME = time(16)
+
+
+def normalize_cash_flow_amount(value: Decimal, name: str = 'amount') -> Decimal:
+    """Validate a nonnegative currency amount and express it exactly in cents."""
+    if not value.is_finite() or value < 0:
+        msg = f'{name} must be a finite nonnegative decimal number'
+        raise ValueError(msg)
+    sign, digits_tuple, exponent_value = value.as_tuple()
+    exponent = cast('int', exponent_value)  # Finite Decimals always use int here.
+    if not any(digits_tuple):
+        return Decimal('0.00')
+    integer_digits = max(len(digits_tuple) + exponent, 0)
+    if integer_digits + 2 > getcontext().prec:
+        msg = f'{name} is too large'
+        raise ValueError(msg)
+    digits = list(digits_tuple)
+    while exponent < -2 and digits and digits[-1] == 0:
+        digits.pop()
+        exponent += 1
+    if exponent < -2:
+        msg = f'{name} must not have fractions smaller than one cent'
+        raise ValueError(msg)
+    if exponent > -2:
+        digits.extend([0] * (exponent + 2))
+        exponent = -2
+    return Decimal((sign, tuple(digits), exponent))
 
 
 def derive_portfolio_state(
@@ -205,9 +232,8 @@ def plan_rebalance(
     if strategy_revision(strategy) != assignment.strategy.revision:
         msg = 'strategy does not match the effective assignment revision'
         raise ValueError(msg)
-    if contribution < 0 or withdrawal < 0:
-        msg = 'contribution and withdrawal must be nonnegative'
-        raise ValueError(msg)
+    contribution = normalize_cash_flow_amount(contribution, 'contribution')
+    withdrawal = normalize_cash_flow_amount(withdrawal, 'withdrawal')
     if contribution and withdrawal:
         msg = 'contribution and withdrawal are mutually exclusive'
         raise ValueError(msg)
@@ -314,8 +340,8 @@ def plan_rebalance(
             currency=portfolio.spec.base_currency,
             holdings_value=holdings_value.quantize(CENT),
             available_cash=cash,
-            contribution=contribution.quantize(CENT),
-            withdrawal=withdrawal.quantize(CENT),
+            contribution=contribution,
+            withdrawal=withdrawal,
             target_portfolio_value=target_portfolio_value.quantize(CENT),
         ),
         orders=tuple(orders),

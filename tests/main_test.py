@@ -69,10 +69,14 @@ class TestCLI(unittest.TestCase):
     def test_cash_flow_amount_rejects_sub_cent_precision(self) -> None:
         """Reject contribution and withdrawal values smaller than one cent."""
         self.assertEqual(cli.nonnegative_amount('100.00'), Decimal('100.00'))
+        self.assertEqual(cli.nonnegative_amount('100.000'), Decimal('100.00'))
+        self.assertEqual(cli.nonnegative_amount('0E-100'), Decimal('0.00'))
         with self.assertRaisesRegex(
             cli.ArgumentTypeError, 'fractions smaller than one cent'
         ):
             cli.nonnegative_amount('100.005')
+        with self.assertRaisesRegex(cli.ArgumentTypeError, 'too large'):
+            cli.nonnegative_amount('1E+30')
 
     def test_main_passes_parsed_download_arguments(self) -> None:
         """Pass parsed ticker, year, and interval values to the downloader."""
@@ -130,8 +134,10 @@ class TestCLI(unittest.TestCase):
                 patch.object(cli, 'data_directory', return_value=data_root),
                 patch.object(cli, 'load_rebalance_plan', return_value=plan),
                 patch.object(
-                    cli, 'load_portfolio', return_value=portfolio
-                ) as load_portfolio,
+                    cli,
+                    'find_manifest',
+                    return_value=(data_root / 'renamed.yaml', portfolio),
+                ) as find_manifest,
                 patch.object(
                     cli, 'load_transactions', return_value=transactions
                 ) as load_transactions,
@@ -145,8 +151,10 @@ class TestCLI(unittest.TestCase):
 
         self.assertEqual(cli_result, 0)
         adapter.assert_called_once_with(executed_at)
-        load_portfolio.assert_called_once_with(
-            data_root / 'portfolio/playground/portfolio.yaml'
+        find_manifest.assert_called_once_with(
+            data_root / 'portfolio/playground',
+            'Portfolio',
+            expected_name='playground',
         )
         load_transactions.assert_called_once_with(
             data_root / 'portfolio/playground/transactions.csv'

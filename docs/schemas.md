@@ -168,9 +168,9 @@ content. For a requested time, the active assignment is the last assignment whos
 Source: [`RebalanceOrder`, `RebalanceValuation`, `RebalanceSummary`, and
 `RebalancePlan`](../py_fund_manager/schemas.py#L430) define the complete output
 and its reconciliation validators.
-[`plan_rebalance`](../py_fund_manager/rebalance.py#L189) constructs the plan from
+[`plan_rebalance`](../py_fund_manager/rebalance.py#L216) constructs the plan from
 validated portfolio state, strategy, and prices. Broker execution reloads JSON
-through [`load_rebalance_plan`](../py_fund_manager/__main__.py#L268), which runs
+through [`load_rebalance_plan`](../py_fund_manager/__main__.py#L271), which runs
 the same Pydantic validation before any order is submitted.
 
 The rebalance command emits a validated JSON document to standard output:
