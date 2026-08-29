@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-import tempfile
 from datetime import datetime  # noqa: TC003 - required by runtime type introspection.
-from pathlib import Path
+from decimal import Decimal
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import yaml
 
 from py_fund_manager.portfolio import (
     _atomic_write_text,
+    _atomic_write_text_exclusive,
     find_manifest,
     find_manifest_in,
     load_directory_manifests,
@@ -23,11 +23,33 @@ from py_fund_manager.portfolio import (
 from py_fund_manager.schemas import (
     ObjectMetadata,
     Strategy,
+    StrategyAnalysis,
     StrategyAssignment,
     StrategyHistory,
     StrategyHistorySpec,
     StrategyRevisionReference,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+
+def analyze_strategy(strategy: Strategy) -> StrategyAnalysis:
+    """Summarize a validated strategy without changing its persisted content."""
+    weights = strategy.target_weights
+    return StrategyAnalysis(
+        name=strategy.metadata.name,
+        display_name=strategy.metadata.display_name,
+        benchmark=strategy.spec.benchmark,
+        allocation_type=strategy.spec.allocation.type,
+        position_count=len(weights),
+        total_weight=sum(weights.values(), Decimal(0)),
+    )
+
+
+def strategy_tickers(strategy: Strategy) -> tuple[str, ...]:
+    """Return strategy ticker symbols in deterministic order."""
+    return tuple(sorted(strategy.target_weights))
 
 
 def canonical_strategy(strategy: Strategy) -> bytes:
@@ -190,22 +212,3 @@ def assign_strategy(
 def _revision_path(strategy_directory: Path, revision: str) -> Path:
     """Map a serialized revision identifier to its immutable snapshot path."""
     return strategy_directory / 'revisions' / f'{revision.replace(":", "-")}.yaml'
-
-
-def _atomic_write_text_exclusive(path: Path, content: str) -> None:
-    """Atomically create text while refusing to replace an existing file."""
-    with tempfile.NamedTemporaryFile(
-        mode='w',
-        encoding='utf-8',
-        dir=path.parent,
-        prefix=f'.{path.name}.',
-        delete=False,
-    ) as temporary_file:
-        temporary_path = Path(temporary_file.name)
-        temporary_file.write(content)
-        temporary_file.flush()
-        os.fsync(temporary_file.fileno())
-    try:
-        os.link(temporary_path, path)
-    finally:
-        temporary_path.unlink(missing_ok=True)

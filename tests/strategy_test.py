@@ -16,11 +16,13 @@ from py_fund_manager.schemas import (
     StrategyRevisionReference,
 )
 from py_fund_manager.strategy import (
+    analyze_strategy,
     assign_strategy,
     effective_assignment,
     load_strategy_history,
     load_strategy_revision,
     strategy_revision,
+    strategy_tickers,
 )
 
 STRATEGY_DOCUMENT = """apiVersion: v1
@@ -40,6 +42,23 @@ spec:
 
 class TestStrategyHistory(unittest.TestCase):
     """Verify strategy revisions and append-only effective assignments."""
+
+    def test_analyze_strategy_and_extract_tickers(self) -> None:
+        """Summarize validated allocation details and sort its ticker symbols."""
+        strategy = Strategy.model_validate(yaml.safe_load(STRATEGY_DOCUMENT))
+
+        self.assertEqual(
+            analyze_strategy(strategy).model_dump(mode='json'),
+            {
+                'name': 'balanced',
+                'display_name': 'Balanced',
+                'benchmark': '$SPX',
+                'allocation_type': 'target_weights',
+                'position_count': 2,
+                'total_weight': '1.000000',
+            },
+        )
+        self.assertEqual(strategy_tickers(strategy), ('AAPL', 'MSFT'))
 
     def test_history_requires_unique_ordered_assignments(self) -> None:
         """Reject duplicate identities and non-increasing effective times."""

@@ -2,6 +2,7 @@
 
 import tempfile
 import unittest
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -10,7 +11,8 @@ from pydantic import ValidationError
 from py_fund_manager.portfolio import (
     create_portfolio,
     find_manifest,
-    import_opening_positions,
+    import_activity,
+    import_opening_snapshot,
     load_portfolio,
     load_strategy,
     load_transactions,
@@ -207,6 +209,31 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
             with self.assertRaisesRegex(ValueError, 'duplicate transaction id'):
                 load_transactions(path)
 
+    def test_load_transactions_requires_chronology_and_unique_external_ids(
+        self,
+    ) -> None:
+        """Reject reordered facts and repeated broker identities."""
+        header = 'id,occurred_at,type,ticker,quantity,price,amount,cost_basis,currency,fees,external_id\n'
+        invalid_ledgers = {
+            'chronology': (
+                'tx-001,2026-08-21T14:32:00Z,deposit,,,,10,,USD,,broker-1\n'
+                'tx-002,2026-08-20T14:32:00Z,deposit,,,,10,,USD,,broker-2\n'
+            ),
+            'external identity': (
+                'tx-001,2026-08-20T14:32:00Z,deposit,,,,10,,USD,,broker-1\n'
+                'tx-002,2026-08-21T14:32:00Z,deposit,,,,10,,USD,,broker-1\n'
+            ),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'transactions.csv'
+            for label, rows in invalid_ledgers.items():
+                with self.subTest(label=label):
+                    path.write_text(header + rows, encoding='utf-8')
+                    with self.assertRaisesRegex(
+                        ValueError, 'occurs before|duplicate external_id'
+                    ):
+                        load_transactions(path)
+
     def test_pydantic_rejects_unknown_portfolio_fields(self) -> None:
         """Reject misspelled or unsupported persisted portfolio properties."""
         with self.assertRaises(ValidationError):
@@ -269,41 +296,208 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
         self.assertEqual(portfolio.spec.broker, 'etrade')
         self.assertEqual(portfolio.spec.account_id, 'etrade-brokerage')
 
-    def test_import_opening_positions_preserves_source_and_writes_ledger(
+    def test_import_opening_snapshot_preserves_source_and_writes_ledger(
         self,
     ) -> None:
-        """Convert canonical holdings into a loadable opening ledger."""
+        """Convert canonical opening facts into a loadable ledger."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            source = root / 'stocks.csv'
+            source = root / 'opening.csv'
             source.write_text(
-                'ticker,quantity,cost_basis,currency\nAAPL,12.5,2100.00,USD\n',
+                'asset,quantity,amount,cost_basis\n'
+                'USD,,100000.00,\n'
+                'AAPL,12.5,,2100.00\n',
                 encoding='utf-8',
             )
             portfolio_directory = create_portfolio(root, 'etrade-roth-ira')
 
-            count = import_opening_positions(portfolio_directory, source)
+            count = import_opening_snapshot(portfolio_directory, source)
             transactions = load_transactions(portfolio_directory / 'transactions.csv')
 
-            self.assertEqual(count, 1)
-            self.assertEqual(transactions[0].quantity, Decimal('12.5'))
-            self.assertEqual(transactions[0].cost_basis, Decimal('2100.00'))
+            self.assertEqual(count, 2)
+            self.assertEqual(transactions[0].amount, Decimal('100000.00'))
+            self.assertEqual(transactions[0].currency, 'USD')
+            self.assertIsNone(transactions[0].external_id)
+            self.assertEqual(transactions[1].quantity, Decimal('12.5'))
+            self.assertEqual(transactions[1].cost_basis, Decimal('2100.00'))
+            self.assertIsNone(transactions[1].external_id)
             self.assertEqual(
-                (portfolio_directory / 'imports' / 'stocks.csv').read_text(),
+                (portfolio_directory / 'imports' / 'opening.csv').read_text(),
                 source.read_text(),
             )
 
-    def test_import_opening_positions_does_not_replace_ledger(self) -> None:
+    def test_import_opening_snapshot_supports_cash_only_portfolio(self) -> None:
+        """Bootstrap only cash at one explicit historical boundary."""
+        statement_time = datetime(2020, 1, 2, 16, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'opening.csv'
+            source.write_text(
+                'asset,amount\nUSD,100000.00\n',
+                encoding='utf-8',
+            )
+            portfolio_directory = create_portfolio(root, 'playground')
+
+            count = import_opening_snapshot(
+                portfolio_directory,
+                source,
+                occurred_at=statement_time,
+            )
+            transactions = load_transactions(portfolio_directory / 'transactions.csv')
+
+        self.assertEqual(count, 1)
+        self.assertEqual(transactions[0].type, TransactionType.OPENING_CASH)
+        self.assertEqual(transactions[0].amount, Decimal('100000.00'))
+        self.assertEqual(transactions[0].occurred_at, statement_time)
+
+    def test_create_portfolio_reuses_documentation_only_directory(self) -> None:
+        """Preserve tracked scaffolding while creating portfolio metadata."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            portfolio_directory = root / 'portfolio/playground'
+            portfolio_directory.mkdir(parents=True)
+            readme = portfolio_directory / 'README.md'
+            readme.write_text('# Playground\n', encoding='utf-8')
+
+            created = create_portfolio(root, 'playground')
+
+            self.assertEqual(created, portfolio_directory)
+            self.assertEqual(readme.read_text(encoding='utf-8'), '# Playground\n')
+            self.assertTrue((portfolio_directory / 'portfolio.yaml').is_file())
+
+    def test_create_portfolio_refuses_existing_data(self) -> None:
+        """Do not replace or add to a directory containing portfolio data."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            portfolio_directory = root / 'portfolio/playground'
+            portfolio_directory.mkdir(parents=True)
+            ledger = portfolio_directory / 'transactions.csv'
+            ledger.write_text('existing data\n', encoding='utf-8')
+
+            with self.assertRaisesRegex(
+                FileExistsError, 'already contains portfolio data: transactions.csv'
+            ):
+                create_portfolio(root, 'playground')
+
+            self.assertEqual(ledger.read_text(encoding='utf-8'), 'existing data\n')
+            self.assertFalse((portfolio_directory / 'portfolio.yaml').exists())
+
+    def test_import_opening_snapshot_does_not_replace_ledger(self) -> None:
         """Reject a second bootstrap import instead of replacing account facts."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            source = root / 'stocks.csv'
-            source.write_text('ticker,quantity\nAAPL,1\n', encoding='utf-8')
+            source = root / 'opening.csv'
+            source.write_text(
+                'asset,quantity\nAAPL,1\n',
+                encoding='utf-8',
+            )
             portfolio_directory = create_portfolio(root, 'etrade-roth-ira')
-            import_opening_positions(portfolio_directory, source)
+            import_opening_snapshot(portfolio_directory, source)
 
             with self.assertRaises(FileExistsError):
-                import_opening_positions(portfolio_directory, source)
+                import_opening_snapshot(portfolio_directory, source)
+
+    def test_import_activity_appends_dividend_and_reinvestment(self) -> None:
+        """Append cash and trade events and preserve their source identities."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            opening = root / 'opening.csv'
+            opening.write_text('asset,amount\nUSD,1000.00\n', encoding='utf-8')
+            activity = root / 'activity.csv'
+            activity.write_text(
+                'occurred_at,event,asset,quantity,amount,price,fees,external_id\n'
+                '2020-03-13T12:00:00-04:00,dividend,USD,,24.60,,,div-1\n'
+                '2020-03-13T12:01:00-04:00,buy,AAPL,0.09,,273.33,0,trade-1\n',
+                encoding='utf-8',
+            )
+            portfolio_directory = create_portfolio(root, 'etrade-brokerage')
+            import_opening_snapshot(
+                portfolio_directory,
+                opening,
+                occurred_at=datetime(2020, 1, 2, 16, tzinfo=UTC),
+            )
+
+            result = import_activity(portfolio_directory, activity)
+            transactions = load_transactions(portfolio_directory / 'transactions.csv')
+
+        self.assertEqual(result.imported, 2)
+        self.assertEqual(result.skipped, 0)
+        self.assertEqual(transactions[1].type, TransactionType.DIVIDEND)
+        self.assertEqual(transactions[1].amount, Decimal('24.60'))
+        self.assertEqual(transactions[2].type, TransactionType.BUY)
+        self.assertEqual(transactions[2].ticker, 'AAPL')
+        self.assertEqual(transactions[2].external_id, 'trade-1')
+
+    def test_import_activity_skips_identical_known_event(self) -> None:
+        """Treat an overlapping broker export as an idempotent update."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            opening = root / 'opening.csv'
+            opening.write_text('asset,amount\nUSD,1000.00\n', encoding='utf-8')
+            row = (
+                'occurred_at,event,asset,amount,external_id\n'
+                '2020-03-13T12:00:00-04:00,dividend,USD,24.60,div-1\n'
+            )
+            first = root / 'activity-march.csv'
+            second = root / 'activity-ytd.csv'
+            conflicting = root / 'activity-conflict.csv'
+            first.write_text(row, encoding='utf-8')
+            second.write_text(row, encoding='utf-8')
+            conflicting.write_text(row.replace('24.60', '25.00'), encoding='utf-8')
+            portfolio_directory = create_portfolio(root, 'etrade-brokerage')
+            import_opening_snapshot(
+                portfolio_directory,
+                opening,
+                occurred_at=datetime(2020, 1, 2, 16, tzinfo=UTC),
+            )
+            import_activity(portfolio_directory, first)
+
+            result = import_activity(portfolio_directory, second)
+            repeated = import_activity(portfolio_directory, first)
+            transactions = load_transactions(portfolio_directory / 'transactions.csv')
+            with self.assertRaisesRegex(ValueError, 'conflicts with the existing'):
+                import_activity(portfolio_directory, conflicting)
+            self.assertFalse(
+                (portfolio_directory / 'imports' / 'activity-conflict.csv').exists()
+            )
+
+        self.assertEqual(result.imported, 0)
+        self.assertEqual(result.skipped, 1)
+        self.assertEqual(repeated.imported, 0)
+        self.assertEqual(repeated.skipped, 1)
+        self.assertEqual(len(transactions), 2)
+
+    def test_import_activity_explains_append_only_ordering(self) -> None:
+        """Name user-facing facts when an import predates the current ledger."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            opening = root / 'opening.csv'
+            opening.write_text('asset,amount\nUSD,1000.00\n', encoding='utf-8')
+            march = root / 'march.csv'
+            march.write_text(
+                'occurred_at,event,asset,amount,external_id\n'
+                '2020-03-13T09:00:00-07:00,dividend,USD,24.60,DIV-MAR\n',
+                encoding='utf-8',
+            )
+            february = root / 'february.csv'
+            february.write_text(
+                'occurred_at,event,asset,amount,external_id\n'
+                '2020-02-13T09:00:00-08:00,dividend,USD,20.00,DIV-FEB\n',
+                encoding='utf-8',
+            )
+            portfolio_directory = create_portfolio(root, 'etrade-brokerage')
+            import_opening_snapshot(
+                portfolio_directory,
+                opening,
+                occurred_at=datetime(2020, 1, 2, 16, tzinfo=UTC),
+            )
+            import_activity(portfolio_directory, march)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "february.csv.*'DIV-FEB'.*'DIV-MAR'.*append-only",
+            ):
+                import_activity(portfolio_directory, february)
 
 
 if __name__ == '__main__':

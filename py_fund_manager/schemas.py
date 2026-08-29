@@ -7,7 +7,7 @@ from datetime import date, datetime  # noqa: TC003 - Pydantic resolves these at 
 from decimal import Decimal
 from enum import StrEnum
 from itertools import pairwise
-from typing import Literal, Self
+from typing import Literal, Self, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -128,8 +128,8 @@ class Transaction(BaseModel):
         return value
 
     @model_validator(mode='after')
-    def validate_security_event(self) -> Self:
-        """Require security identity and quantity for position-changing facts."""
+    def validate_transaction_shape(self) -> Self:
+        """Require the fields needed to derive each supported ledger fact."""
         security_events = {
             TransactionType.OPENING_POSITION,
             TransactionType.POSITION_ADJUSTMENT,
@@ -149,6 +149,33 @@ class Transaction(BaseModel):
             self.quantity is not None and self.quantity <= 0
         ):
             msg = f'{self.type} quantity must be positive'
+            raise ValueError(msg)
+        cash_events = {
+            TransactionType.OPENING_CASH,
+            TransactionType.DEPOSIT,
+            TransactionType.WITHDRAWAL,
+            TransactionType.DIVIDEND,
+            TransactionType.INTEREST,
+            TransactionType.FEE,
+        }
+        if self.type in cash_events and self.amount is None:
+            msg = f'{self.type} requires amount'
+            raise ValueError(msg)
+        if self.type in {TransactionType.BUY, TransactionType.SELL} and (
+            self.amount is None and self.price is None
+        ):
+            msg = f'{self.type} requires amount or price'
+            raise ValueError(msg)
+        if self.type == TransactionType.OPENING_CASH and any(
+            value is not None
+            for value in (self.ticker, self.quantity, self.price, self.cost_basis)
+        ):
+            msg = 'opening_cash accepts only amount, currency, and identity fields'
+            raise ValueError(msg)
+        if self.type == TransactionType.OPENING_POSITION and any(
+            value is not None for value in (self.price, self.amount)
+        ):
+            msg = 'opening_position does not accept price or amount'
             raise ValueError(msg)
         return self
 
@@ -216,6 +243,19 @@ class Strategy(BaseModel):
     def target_weights(self) -> dict[str, Decimal]:
         """Expose target weights directly for allocation calculations."""
         return self.spec.allocation.positions
+
+
+class StrategyAnalysis(BaseModel):
+    """Typed summary of one validated strategy."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True)
+
+    name: str
+    display_name: str
+    benchmark: str | None
+    allocation_type: Literal['target_weights']
+    position_count: int = Field(ge=1)
+    total_weight: Decimal
 
 
 class StrategyRevisionReference(BaseModel):
@@ -287,7 +327,7 @@ class PriceObservation(BaseModel):
 
     model_config = ConfigDict(extra='forbid', frozen=True, str_strip_whitespace=True)
 
-    ticker: str = Field(min_length=1)
+    ticker: str = Field(min_length=1, pattern=TICKER_PATTERN)
     as_of: date
     available_at: datetime
     price: Decimal = Field(gt=0)
@@ -326,6 +366,65 @@ class OrderReason(StrEnum):
     UNDERWEIGHT = 'underweight'
     OVERWEIGHT = 'overweight'
     NOT_IN_STRATEGY = 'not_in_strategy'
+
+
+class BrokerOrder(BaseModel):
+    """Transport-neutral order submitted to a broker adapter."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True, str_strip_whitespace=True)
+
+    id: str = Field(min_length=1)
+    ticker: str = Field(min_length=1, pattern=TICKER_PATTERN)
+    side: OrderSide
+    quantity: Decimal = Field(gt=0)
+    currency: str = Field(min_length=3, max_length=3)
+    submitted_at: datetime
+
+    @field_validator('ticker', 'currency', mode='before')
+    @classmethod
+    def normalize_order_code(cls, value: object) -> object:
+        """Normalize order ticker and currency codes."""
+        return value.strip().upper() if isinstance(value, str) else value
+
+    @field_validator('submitted_at')
+    @classmethod
+    def validate_submitted_at(cls, value: datetime) -> datetime:
+        """Require an unambiguous order submission time."""
+        if value.tzinfo is None:
+            msg = 'order submitted_at must include a UTC offset'
+            raise ValueError(msg)
+        return value
+
+
+class Execution(BaseModel):
+    """One confirmed full or partial fill returned by a broker adapter."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True, str_strip_whitespace=True)
+
+    id: str = Field(min_length=1)
+    order_id: str = Field(min_length=1)
+    ticker: str = Field(min_length=1, pattern=TICKER_PATTERN)
+    side: OrderSide
+    quantity: Decimal = Field(gt=0)
+    price: Decimal = Field(gt=0)
+    fees: Decimal = Field(default=Decimal(0), ge=0)
+    currency: str = Field(min_length=3, max_length=3)
+    executed_at: datetime
+
+    @field_validator('ticker', 'currency', mode='before')
+    @classmethod
+    def normalize_execution_code(cls, value: object) -> object:
+        """Normalize execution ticker and currency codes."""
+        return value.strip().upper() if isinstance(value, str) else value
+
+    @field_validator('executed_at')
+    @classmethod
+    def validate_executed_at(cls, value: datetime) -> datetime:
+        """Require an unambiguous execution time."""
+        if value.tzinfo is None:
+            msg = 'execution executed_at must include a UTC offset'
+            raise ValueError(msg)
+        return value
 
 
 class RebalanceOrder(BaseModel):
@@ -457,3 +556,32 @@ class RebalancePlan(BaseModel):
             msg = 'rebalance summary must reconcile exactly to its orders'
             raise ValueError(msg)
         return self
+
+
+MAX_CURRENCY_INTEGER_DIGITS = 18
+
+
+def normalize_cash_flow_amount(value: Decimal, name: str = 'amount') -> Decimal:
+    """Validate a nonnegative currency amount and express it exactly in cents."""
+    if not value.is_finite() or value < 0:
+        msg = f'{name} must be a finite nonnegative decimal number'
+        raise ValueError(msg)
+    sign, digits_tuple, exponent_value = value.as_tuple()
+    exponent = cast('int', exponent_value)  # Finite Decimals always use int here.
+    if not any(digits_tuple):
+        return Decimal('0.00')
+    integer_digits = max(len(digits_tuple) + exponent, 0)
+    if integer_digits > MAX_CURRENCY_INTEGER_DIGITS:
+        msg = f'{name} exceeds the {MAX_CURRENCY_INTEGER_DIGITS}-digit limit'
+        raise ValueError(msg)
+    digits = list(digits_tuple)
+    while exponent < -2 and digits and digits[-1] == 0:
+        digits.pop()
+        exponent += 1
+    if exponent < -2:
+        msg = f'{name} must not have fractions smaller than one cent'
+        raise ValueError(msg)
+    if exponent > -2:
+        digits.extend([0] * (exponent + 2))
+        exponent = -2
+    return Decimal((sign, tuple(digits), exponent))

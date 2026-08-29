@@ -40,6 +40,19 @@ Corrections should be additional explicit facts rather than silent changes to
 earlier records. This preserves the audit trail and makes reconciliation results
 explainable.
 
+## Broker
+
+A **broker** executes orders for a portfolio account and reports confirmed fills.
+A **broker adapter** represents that capability through transport-neutral orders
+and executions, insulating shared portfolio logic from provider APIs and
+historical simulations.
+
+A broker adapter does not own the portfolio ledger or decide how executions are
+persisted. Shared execution services validate a reviewed plan against current
+ledger state, normalize its orders, validate complete fills, and map those fills
+into transaction facts. Historical and live adapters can therefore share
+accounting rules without inheriting provider-specific state or behavior.
+
 ## Position, holding, and tax lot
 
 A **position** or **holding** is the derived quantity of a security in a portfolio.
@@ -76,8 +89,7 @@ identifies exact strategy content. Revisions are immutable because constituents
 and weights may change while the strategy ID remains stable.
 
 “Strategy” is the chosen term for allocation rules. “Fund” can refer to a pooled
-legal vehicle and is too ambiguous here, although it remains in legacy material
-and planned CLI examples.
+legal vehicle and is too ambiguous for this domain model.
 
 ## Market-price cache
 

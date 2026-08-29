@@ -188,7 +188,18 @@ def _load_manifests(directory: Path, errors: list[str]) -> list[tuple[Path, Mani
 
 def _resource_directories(root: Path) -> list[Path]:
     """Return resource directories in stable identity order."""
-    return sorted(path for path in root.iterdir() if path.is_dir())
+    return sorted(
+        path
+        for path in root.iterdir()
+        if path.is_dir() and not _is_documentation_only_directory(path)
+    )
+
+
+def _is_documentation_only_directory(directory: Path) -> bool:
+    """Recognize an explicitly marked documentation-only scenario."""
+    entries = {path.name for path in directory.iterdir()}
+    marker = '.py-fund-manager-documentation-only'
+    return marker in entries and entries <= {marker, 'README.md', '.gitignore'}
 
 
 def _require_at_most_one_history(

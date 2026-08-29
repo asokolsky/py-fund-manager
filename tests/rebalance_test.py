@@ -215,6 +215,39 @@ class TestRebalance(unittest.TestCase):
         self.assertEqual(plan.summary.estimated_buys, Decimal('99.999999'))
         self.assertEqual(plan.summary.estimated_ending_cash, Decimal('0.000001'))
 
+    def test_plan_rejects_subcent_cash_flow_amounts(self) -> None:
+        """Enforce currency precision for direct library callers."""
+        strategy = target_strategy({'AAPL': '1'})
+        with self.assertRaisesRegex(ValueError, 'fractions smaller than one cent'):
+            plan_rebalance(
+                portfolio(),
+                [transaction('cash', 'opening_cash', amount='100')],
+                assignment(strategy),
+                strategy,
+                {'AAPL': price_observation('AAPL', Decimal(100))},
+                as_of=AS_OF,
+                contribution=Decimal('100.005'),
+                generated_at=AS_OF,
+            )
+
+    def test_plan_preserves_subcent_available_cash(self) -> None:
+        """Keep exact ledger cash so a later plan reconciles to its summary."""
+        transactions = [transaction('cash', 'opening_cash', amount='0.000001')]
+        strategy = target_strategy({'AAPL': '1'})
+
+        plan = plan_rebalance(
+            portfolio(),
+            transactions,
+            assignment(strategy),
+            strategy,
+            {'AAPL': price_observation('AAPL', Decimal(3))},
+            as_of=AS_OF,
+            generated_at=AS_OF,
+        )
+
+        self.assertEqual(plan.valuation.available_cash, Decimal('0.000001'))
+        self.assertEqual(plan.summary.estimated_ending_cash, Decimal('0.000001'))
+
     def test_load_latest_daily_price_at_or_before_time(self) -> None:
         """Select the last eligible close and preserve its observation date."""
         with tempfile.TemporaryDirectory() as directory:

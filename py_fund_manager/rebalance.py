@@ -28,6 +28,7 @@ from py_fund_manager.schemas import (
     StrategyAssignment,
     Transaction,
     TransactionType,
+    normalize_cash_flow_amount,
 )
 from py_fund_manager.strategy import (
     effective_assignment,
@@ -205,9 +206,8 @@ def plan_rebalance(
     if strategy_revision(strategy) != assignment.strategy.revision:
         msg = 'strategy does not match the effective assignment revision'
         raise ValueError(msg)
-    if contribution < 0 or withdrawal < 0:
-        msg = 'contribution and withdrawal must be nonnegative'
-        raise ValueError(msg)
+    contribution = normalize_cash_flow_amount(contribution, 'contribution')
+    withdrawal = normalize_cash_flow_amount(withdrawal, 'withdrawal')
     if contribution and withdrawal:
         msg = 'contribution and withdrawal are mutually exclusive'
         raise ValueError(msg)
@@ -313,9 +313,9 @@ def plan_rebalance(
             as_of=as_of,
             currency=portfolio.spec.base_currency,
             holdings_value=holdings_value.quantize(CENT),
-            available_cash=cash.quantize(CENT),
-            contribution=contribution.quantize(CENT),
-            withdrawal=withdrawal.quantize(CENT),
+            available_cash=cash,
+            contribution=contribution,
+            withdrawal=withdrawal,
             target_portfolio_value=target_portfolio_value.quantize(CENT),
         ),
         orders=tuple(orders),

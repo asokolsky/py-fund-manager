@@ -63,6 +63,18 @@ class TestDataValidation(unittest.TestCase):
         self.assertIn('no Portfolio manifest', context.exception.errors[0])
         self.assertIn('no Strategy manifest', context.exception.errors[1])
 
+    def test_readme_does_not_disable_resource_validation(self) -> None:
+        """Require an explicit marker before skipping documentation directories."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            portfolio = root / 'portfolio/oops'
+            portfolio.mkdir(parents=True)
+            (portfolio / 'README.md').write_text('# Not configured yet\n')
+            (root / 'strategy').mkdir()
+
+            with self.assertRaisesRegex(DataValidationError, 'no Portfolio manifest'):
+                validate_data_root(root)
+
     def test_validator_reports_independent_errors_in_one_portfolio(self) -> None:
         """Continue checking a ledger and history after Portfolio identity fails."""
         with tempfile.TemporaryDirectory() as directory:

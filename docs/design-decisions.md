@@ -91,6 +91,41 @@ exchange timezone. This conservative boundary prevents a same-day close from
 being used before the regular session has ended. Missing provenance metadata and
 conflicting latest observations are validation failures.
 
+## Broker adapters use structural contracts
+
+The `Broker` protocol exposes one operation: fulfill a normalized `BrokerOrder`
+and return confirmed `Execution` records. `HistoricalBroker` satisfies that
+contract by selecting the latest eligible observation from the historical price
+cache at its configured execution time. Future live adapters can satisfy the
+same contract through external APIs without inheriting simulation state.
+
+Plan validation, order normalization, fill validation, and execution-to-ledger
+mapping remain shared application services. The current synchronous workflow
+requires fills to complete each submitted order exactly. Asynchronous order
+status, cancellation, and resumable partial-fill workflows remain future broker
+adapter work rather than implicit behavior in the common contract.
+
+Contribution and withdrawal values on a rebalance plan remain unconfirmed
+planning assumptions, but their execution boundaries differ. The executor rejects
+a contribution plan because its buy orders would spend cash that is not yet in
+the ledger; the deposit must be confirmed first, after which a new executable plan
+is generated from that state.
+
+A withdrawal plan can be executed because its sell orders raise cash before the
+money leaves the portfolio. Confirmed fills must leave at least the planned
+withdrawal amount available. Execution produces only trade facts: it does not
+silently convert the assumption into a withdrawal transaction. The operator must
+import the fills and then import the separately confirmed withdrawal. Until that
+second import occurs, the ledger still treats the reserved cash as available, so
+a later plan could incorrectly reinvest money that has already left the account.
+
+Normalized order IDs derive from the portfolio ID, the plan valuation timestamp
+expressed in UTC, and the order's stable position in the plan. Re-executing the
+same plan therefore produces the same order and execution identities. This makes
+confirmed execution imports idempotent; IDs are unique per portfolio and plan
+timestamp, not globally unique across independently generated plans with identical
+timestamps.
+
 ## Pydantic models are the schema authority
 
 All persisted inputs and structured outputs are defined as frozen Pydantic models

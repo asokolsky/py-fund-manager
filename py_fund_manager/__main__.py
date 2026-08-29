@@ -1,5 +1,6 @@
 """Command-line entry point for py_fund_manager."""
 
+import json
 import logging
 import sys
 from argparse import (
@@ -16,16 +17,28 @@ from pathlib import Path
 import yaml
 
 from . import __version__
+from .broker import execute_rebalance_plan
 from .config import ConfigurationError, configured_data_root
 from .download import Interval, download, inclusive_year_range, tickers_argument
+from .historical_broker import HistoricalBroker
 from .log import setup_logging
-from .portfolio import create_portfolio, find_manifest, import_opening_positions
+from .portfolio import (
+    create_portfolio,
+    find_manifest,
+    import_activity,
+    import_opening_snapshot,
+    load_strategy,
+    load_transactions,
+)
 from .rebalance import rebalance_portfolio
+from .schemas import RebalancePlan, normalize_cash_flow_amount
 from .strategy import (
+    analyze_strategy,
     assign_strategy,
     effective_assignment,
     load_strategy_history,
     load_strategy_revision,
+    strategy_tickers,
 )
 from .validation import validate_data_root
 
@@ -35,8 +48,11 @@ epilog = """Examples:
     python -m py_fund_manager --version
     python -m py_fund_manager -v download 2024-2025 --tickers=AAPL,MSFT
     python -m py_fund_manager download 2020 --tickers=@tickers.txt --interval=1w
+    python -m py_fund_manager strategy show strategy.yaml
+    python -m py_fund_manager strategy tickers strategy.yaml
     python -m py_fund_manager portfolio --create etrade-brokerage
-    python -m py_fund_manager portfolio --create etrade-brokerage import-stocks stocks.csv
+    python -m py_fund_manager portfolio --create etrade-brokerage import opening.csv
+    python -m py_fund_manager portfolio etrade-brokerage import activity.csv
     python -m py_fund_manager portfolio etrade-brokerage strategy show
 """
 
@@ -97,6 +113,27 @@ def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuse
         default=Interval.DAILY,
         help='Price-bar interval: 1h=hourly, 1d=daily, 1w=weekly (default: 1d)',
     )
+    broker_parser = commands.add_parser('broker', help='Execute rebalance plans')
+    broker_commands = broker_parser.add_subparsers(dest='broker', required=True)
+    historical_parser = broker_commands.add_parser(
+        'historical', help='Execute a plan from cached historical prices'
+    )
+    historical_parser.add_argument('plan_file', type=Path)
+    historical_parser.add_argument('--as-of', type=effective_time, required=True)
+    strategy_parser = commands.add_parser(
+        'strategy', help='Inspect standalone strategy manifests'
+    )
+    strategy_commands = strategy_parser.add_subparsers(
+        dest='strategy_command', required=True
+    )
+    show_parser = strategy_commands.add_parser(
+        'show', help='Validate and summarize a strategy manifest'
+    )
+    show_parser.add_argument('strategy_file', type=Path)
+    tickers_parser = strategy_commands.add_parser(
+        'tickers', help='Print sorted ticker symbols as a comma-separated value'
+    )
+    tickers_parser.add_argument('strategy_file', type=Path)
     portfolio_parser = commands.add_parser(
         'portfolio', help='Create and manage portfolios'
     )
@@ -113,7 +150,7 @@ def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuse
     portfolio_parser.add_argument(
         'portfolio_arguments',
         nargs=REMAINDER,
-        help='import-stocks or strategy operation and its arguments',
+        help='import or strategy operation and its arguments',
     )
 
     args = parser.parse_args()
@@ -135,6 +172,51 @@ def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuse
             return 1
         print(summary.message())
         return 0
+    if args.command == 'broker':
+        try:
+            directory = data_directory()
+            plan = load_rebalance_plan(args.plan_file)
+            portfolio_directory = directory / 'portfolio' / plan.portfolio_id
+            _, portfolio = find_manifest(
+                portfolio_directory,
+                'Portfolio',
+                expected_name=plan.portfolio_id,
+            )
+            transactions = load_transactions(portfolio_directory / 'transactions.csv')
+            broker = HistoricalBroker(args.as_of)
+            result = execute_rebalance_plan(
+                broker,
+                portfolio,
+                transactions,
+                plan,
+            )
+        except (OSError, TypeError, ValueError) as error:
+            log.log(logging.ERROR, '%s', error)
+            return 1
+        print(
+            '['
+            + ','.join(execution.model_dump_json() for execution in result.executions)
+            + ']'
+        )
+        return 0
+    if args.command == 'strategy':
+        try:
+            strategy = load_strategy(args.strategy_file)
+        except (OSError, TypeError, ValueError) as error:
+            log.log(logging.ERROR, '%s', error)
+            return 1
+        if args.strategy_command == 'tickers':
+            print(','.join(strategy_tickers(strategy)))
+        else:
+            print(
+                yaml.safe_dump(
+                    analyze_strategy(strategy).model_dump(mode='json'),
+                    sort_keys=False,
+                    explicit_end=False,
+                ),
+                end='',
+            )
+        return 0
     if args.command == 'portfolio':
         try:
             directory = data_directory()
@@ -150,19 +232,29 @@ def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuse
                 portfolio_directory = create_portfolio(directory, args.create)
                 print(f'Created portfolio {args.create} in {portfolio_directory}')
                 if action is not None:
-                    imported = import_opening_positions(
-                        portfolio_directory, action.stocks_file
+                    imported = import_opening_snapshot(
+                        portfolio_directory,
+                        action.source_file,
+                        occurred_at=action.as_of,
                     )
                     print(
-                        f'Imported {imported} opening positions from {action.stocks_file}'
+                        f'Imported {imported} opening facts from {action.source_file}'
                     )
             elif args.portfolio_id is not None:
                 action = _parse_portfolio_action(args.portfolio_arguments)
-                if action.portfolio_command == 'strategy':
-                    result = _strategy_command(directory, args.portfolio_id, action)
-                else:
-                    result = _rebalance_command(directory, args.portfolio_id, action)
-                return result
+                if action.portfolio_command == 'import':
+                    import_result = import_activity(
+                        directory / 'portfolio' / args.portfolio_id,
+                        action.source_file,
+                    )
+                    print(
+                        f'Imported {import_result.imported} activity events from '
+                        f'{action.source_file}; skipped {import_result.skipped}'
+                    )
+                    return 0
+                elif action.portfolio_command == 'strategy':
+                    return _strategy_command(directory, args.portfolio_id, action)
+                return _rebalance_command(directory, args.portfolio_id, action)
             else:
                 portfolio_parser.error(
                     '--create PORTFOLIO_ID or an existing portfolio ID is required'
@@ -174,6 +266,15 @@ def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuse
 
     parser.print_help()
     return 0
+
+
+def load_rebalance_plan(path: Path) -> RebalancePlan:
+    """Load one validated rebalance plan from JSON."""
+    try:
+        document = json.loads(path.read_text(encoding='utf-8'))
+        return RebalancePlan.model_validate(document)
+    except (OSError, TypeError, ValueError) as error:
+        raise ValueError(f'{path}: invalid rebalance plan: {error}') from error
 
 
 def effective_time(value: str) -> datetime:
@@ -196,18 +297,19 @@ def nonnegative_amount(value: str) -> Decimal:
     except InvalidOperation as error:
         msg = 'amount must be a decimal number'
         raise ArgumentTypeError(msg) from error
-    if not amount.is_finite() or amount < 0:
-        msg = 'amount must be a finite nonnegative decimal number'
-        raise ArgumentTypeError(msg)
-    return amount
+    try:
+        return normalize_cash_flow_amount(amount)
+    except ValueError as error:
+        raise ArgumentTypeError(str(error)) from error
 
 
 def _parse_create_action(arguments: list[str]) -> Namespace:
     """Parse an optional action performed immediately after portfolio creation."""
     parser = ArgumentParser(prog=f'{CLI_NAME} portfolio --create PORTFOLIO_ID')
     commands = parser.add_subparsers(dest='command', required=True)
-    import_parser = commands.add_parser('import-stocks')
-    import_parser.add_argument('stocks_file', type=Path)
+    import_parser = commands.add_parser('import')
+    import_parser.add_argument('source_file', type=Path)
+    import_parser.add_argument('--as-of', type=effective_time)
     return parser.parse_args(arguments)
 
 
@@ -215,16 +317,18 @@ def _parse_portfolio_action(arguments: list[str]) -> Namespace:
     """Parse an operation for an existing portfolio."""
     parser = ArgumentParser(prog=f'{CLI_NAME} portfolio PORTFOLIO_ID')
     commands = parser.add_subparsers(dest='portfolio_command', required=True)
+    import_parser = commands.add_parser('import')
+    import_parser.add_argument('source_file', type=Path)
     strategy_parser = commands.add_parser('strategy')
     strategy_commands = strategy_parser.add_subparsers(
         dest='strategy_command', required=True
     )
     show_parser = strategy_commands.add_parser('show')
-    show_parser.add_argument('--effective-at', type=effective_time)
+    show_parser.add_argument('--as-of', type=effective_time)
     strategy_commands.add_parser('history')
     set_parser = strategy_commands.add_parser('set')
     set_parser.add_argument('strategy_id')
-    set_parser.add_argument('--effective-at', type=effective_time)
+    set_parser.add_argument('--as-of', type=effective_time)
     set_parser.add_argument('--reason')
     rebalance_parser = commands.add_parser('rebalance')
     cash_flow = rebalance_parser.add_mutually_exclusive_group()
@@ -246,7 +350,7 @@ def _strategy_command(directory: Path, portfolio_id: str, args: Namespace) -> in
             directory,
             portfolio_id,
             args.strategy_id,
-            args.effective_at or datetime.now(UTC),
+            args.as_of or datetime.now(UTC),
             args.reason,
         )
         print(
@@ -270,7 +374,7 @@ def _strategy_command(directory: Path, portfolio_id: str, args: Namespace) -> in
             end='',
         )
         return 0
-    assignment = effective_assignment(history, args.effective_at or datetime.now(UTC))
+    assignment = effective_assignment(history, args.as_of or datetime.now(UTC))
     strategy = load_strategy_revision(directory, assignment.strategy)
     document = {
         'assignment': assignment.model_dump(mode='json', exclude_none=True),
