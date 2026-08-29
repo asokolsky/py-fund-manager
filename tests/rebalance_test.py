@@ -215,6 +215,24 @@ class TestRebalance(unittest.TestCase):
         self.assertEqual(plan.summary.estimated_buys, Decimal('99.999999'))
         self.assertEqual(plan.summary.estimated_ending_cash, Decimal('0.000001'))
 
+    def test_plan_preserves_subcent_available_cash(self) -> None:
+        """Keep exact ledger cash so a later plan reconciles to its summary."""
+        transactions = [transaction('cash', 'opening_cash', amount='0.000001')]
+        strategy = target_strategy({'AAPL': '1'})
+
+        plan = plan_rebalance(
+            portfolio(),
+            transactions,
+            assignment(strategy),
+            strategy,
+            {'AAPL': price_observation('AAPL', Decimal(3))},
+            as_of=AS_OF,
+            generated_at=AS_OF,
+        )
+
+        self.assertEqual(plan.valuation.available_cash, Decimal('0.000001'))
+        self.assertEqual(plan.summary.estimated_ending_cash, Decimal('0.000001'))
+
     def test_load_latest_daily_price_at_or_before_time(self) -> None:
         """Select the last eligible close and preserve its observation date."""
         with tempfile.TemporaryDirectory() as directory:

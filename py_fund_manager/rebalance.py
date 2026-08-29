@@ -313,7 +313,7 @@ def plan_rebalance(
             as_of=as_of,
             currency=portfolio.spec.base_currency,
             holdings_value=holdings_value.quantize(CENT),
-            available_cash=cash.quantize(CENT),
+            available_cash=cash,
             contribution=contribution.quantize(CENT),
             withdrawal=withdrawal.quantize(CENT),
             target_portfolio_value=target_portfolio_value.quantize(CENT),

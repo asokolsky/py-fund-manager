@@ -84,6 +84,7 @@ TRANSACTION_FIELDS = (
     'fees',
     'external_id',
 )
+PORTFOLIO_SCAFFOLD_FILES = frozenset({'README.md', '.gitignore'})
 
 ACTIVITY_SECURITY_EVENTS = {
     TransactionType.POSITION_ADJUSTMENT,
@@ -115,7 +116,16 @@ def create_portfolio(data_directory: Path, portfolio_id: str) -> Path:
         msg = 'portfolio ID must use lowercase kebab-case'
         raise TypeError(msg)
     portfolio_directory = data_directory / 'portfolio' / portfolio_id
-    portfolio_directory.mkdir(parents=True, exist_ok=False)
+    portfolio_directory.mkdir(parents=True, exist_ok=True)
+    blocking_entries = sorted(
+        path.name
+        for path in portfolio_directory.iterdir()
+        if path.name not in PORTFOLIO_SCAFFOLD_FILES
+    )
+    if blocking_entries:
+        entries = ', '.join(blocking_entries)
+        msg = f'{portfolio_directory} already contains portfolio data: {entries}'
+        raise FileExistsError(msg)
     broker = portfolio_id.partition('-')[0]
     portfolio = Portfolio(
         apiVersion='v1',
@@ -128,7 +138,7 @@ def create_portfolio(data_directory: Path, portfolio_id: str) -> Path:
         ),
     )
     document = portfolio.model_dump(mode='json', by_alias=True, exclude_none=True)
-    _atomic_write_text(
+    _atomic_write_text_exclusive(
         portfolio_directory / 'portfolio.yaml',
         yaml.safe_dump(document, sort_keys=False),
     )
@@ -646,6 +656,25 @@ def _atomic_write_text(path: Path, content: str) -> None:
         os.fsync(temporary_file.fileno())
     try:
         temporary_path.replace(path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def _atomic_write_text_exclusive(path: Path, content: str) -> None:
+    """Atomically create text while refusing to replace an existing file."""
+    with tempfile.NamedTemporaryFile(
+        mode='w',
+        encoding='utf-8',
+        dir=path.parent,
+        prefix=f'.{path.name}.',
+        delete=False,
+    ) as temporary_file:
+        temporary_path = Path(temporary_file.name)
+        temporary_file.write(content)
+        temporary_file.flush()
+        os.fsync(temporary_file.fileno())
+    try:
+        os.link(temporary_path, path)
     finally:
         temporary_path.unlink(missing_ok=True)
 

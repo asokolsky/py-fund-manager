@@ -2,35 +2,43 @@
 
 from __future__ import annotations
 
-from py_fund_manager.schemas import BrokerOrder, Execution, PriceObservation
+from typing import TYPE_CHECKING
+
+from py_fund_manager.download import STOCKS_DIRECTORY
+from py_fund_manager.rebalance import load_latest_daily_prices
+from py_fund_manager.schemas import BrokerOrder, Execution
+
+if TYPE_CHECKING:
+    from datetime import datetime
+    from pathlib import Path
 
 
 class HistoricalBroker:
-    """Fill orders at historical observations supplied by the simulation."""
+    """Fill orders from the historical price cache at a simulated execution time."""
 
-    def __init__(self, prices: dict[str, PriceObservation]) -> None:
-        """Initialize the adapter with ticker-keyed historical observations."""
-        self._prices = dict(prices)
+    def __init__(
+        self,
+        executed_at: datetime,
+        stocks_directory: Path = STOCKS_DIRECTORY,
+    ) -> None:
+        """Select the simulated fill time and historical price cache."""
+        if executed_at.tzinfo is None:
+            msg = 'historical execution time must include a UTC offset'
+            raise ValueError(msg)
+        self._executed_at = executed_at
+        self._stocks_directory = stocks_directory
 
     def execute_order(self, order: BrokerOrder) -> tuple[Execution, ...]:
         """Fill one complete order at its eligible historical observation."""
-        try:
-            observation = self._prices[order.ticker]
-        except KeyError as error:
-            msg = f'no historical execution price for {order.ticker}'
-            raise ValueError(msg) from error
-        if observation.ticker != order.ticker:
-            msg = f'{order.ticker} historical price contains {observation.ticker}'
+        if self._executed_at < order.submitted_at:
+            msg = f'{order.ticker} historical execution predates order submission'
             raise ValueError(msg)
-        if observation.currency != order.currency:
-            msg = (
-                f'{order.ticker} historical price uses {observation.currency}; '
-                f'order uses {order.currency}'
-            )
-            raise ValueError(msg)
-        if observation.available_at > order.submitted_at:
-            msg = f'{order.ticker} historical price was unavailable at order time'
-            raise ValueError(msg)
+        observation = load_latest_daily_prices(
+            {order.ticker},
+            self._executed_at,
+            order.currency,
+            self._stocks_directory,
+        )[order.ticker]
         return (
             Execution(
                 id=f'{order.id}-fill-0001',
@@ -40,6 +48,6 @@ class HistoricalBroker:
                 quantity=order.quantity,
                 price=observation.price,
                 currency=order.currency,
-                executed_at=order.submitted_at,
+                executed_at=self._executed_at,
             ),
         )

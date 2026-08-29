@@ -1,5 +1,6 @@
 """Command-line entry point for py_fund_manager."""
 
+import json
 import logging
 import sys
 from argparse import (
@@ -18,19 +19,24 @@ import yaml
 from . import __version__
 from .config import ConfigurationError, configured_data_root
 from .download import Interval, download, inclusive_year_range, tickers_argument
+from .historical_broker import HistoricalBroker
 from .log import setup_logging
 from .portfolio import (
     create_portfolio,
     find_manifest,
     import_activity,
     import_opening_snapshot,
+    load_strategy,
 )
 from .rebalance import rebalance_portfolio
+from .schemas import BrokerOrder
 from .strategy import (
+    analyze_strategy,
     assign_strategy,
     effective_assignment,
     load_strategy_history,
     load_strategy_revision,
+    strategy_tickers,
 )
 from .validation import validate_data_root
 
@@ -40,6 +46,8 @@ epilog = """Examples:
     python -m py_fund_manager --version
     python -m py_fund_manager -v download 2024-2025 --tickers=AAPL,MSFT
     python -m py_fund_manager download 2020 --tickers=@tickers.txt --interval=1w
+    python -m py_fund_manager strategy analyze strategy.yaml
+    python -m py_fund_manager strategy analyze strategy.yaml --extract-tickers
     python -m py_fund_manager portfolio --create etrade-brokerage
     python -m py_fund_manager portfolio --create etrade-brokerage import opening.csv
     python -m py_fund_manager portfolio etrade-brokerage import activity.csv
@@ -103,6 +111,28 @@ def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuse
         default=Interval.DAILY,
         help='Price-bar interval: 1h=hourly, 1d=daily, 1w=weekly (default: 1d)',
     )
+    broker_parser = commands.add_parser('broker', help='Execute normalized orders')
+    broker_commands = broker_parser.add_subparsers(dest='broker', required=True)
+    historical_parser = broker_commands.add_parser(
+        'historical', help='Execute orders from cached historical prices'
+    )
+    historical_parser.add_argument('orders_file', type=Path)
+    historical_parser.add_argument('--as-of', type=effective_time, required=True)
+    strategy_parser = commands.add_parser(
+        'strategy', help='Inspect standalone strategy manifests'
+    )
+    strategy_commands = strategy_parser.add_subparsers(
+        dest='strategy_command', required=True
+    )
+    analyze_parser = strategy_commands.add_parser(
+        'analyze', help='Validate and summarize a strategy manifest'
+    )
+    analyze_parser.add_argument('strategy_file', type=Path)
+    analyze_parser.add_argument(
+        '--extract-tickers',
+        action='store_true',
+        help='Print sorted ticker symbols as a comma-separated value',
+    )
     portfolio_parser = commands.add_parser(
         'portfolio', help='Create and manage portfolios'
     )
@@ -140,6 +170,40 @@ def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuse
             log.log(logging.ERROR, '%s', error)
             return 1
         print(summary.message())
+        return 0
+    if args.command == 'broker':
+        try:
+            orders = load_broker_orders(args.orders_file)
+            broker = HistoricalBroker(args.as_of)
+            executions = tuple(
+                execution
+                for order in orders
+                for execution in broker.execute_order(order)
+            )
+        except (OSError, TypeError, ValueError) as error:
+            log.log(logging.ERROR, '%s', error)
+            return 1
+        print(
+            '['
+            + ','.join(execution.model_dump_json() for execution in executions)
+            + ']'
+        )
+        return 0
+    if args.command == 'strategy':
+        try:
+            strategy = load_strategy(args.strategy_file)
+        except (OSError, TypeError, ValueError) as error:
+            log.log(logging.ERROR, '%s', error)
+            return 1
+        if args.extract_tickers:
+            print(','.join(strategy_tickers(strategy)))
+        else:
+            print(
+                yaml.safe_dump(
+                    analyze_strategy(strategy), sort_keys=False, explicit_end=False
+                ),
+                end='',
+            )
         return 0
     if args.command == 'portfolio':
         try:
@@ -190,6 +254,16 @@ def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuse
 
     parser.print_help()
     return 0
+
+
+def load_broker_orders(path: Path) -> tuple[BrokerOrder, ...]:
+    """Load one normalized order or a nonempty order array from JSON."""
+    document = json.loads(path.read_text(encoding='utf-8'))
+    values = document if isinstance(document, list) else [document]
+    if not values:
+        msg = f'{path}: order array must not be empty'
+        raise ValueError(msg)
+    return tuple(BrokerOrder.model_validate(value) for value in values)
 
 
 def effective_time(value: str) -> datetime:

@@ -350,6 +350,38 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
         self.assertEqual(transactions[0].amount, Decimal('100000.00'))
         self.assertEqual(transactions[0].occurred_at, statement_time)
 
+    def test_create_portfolio_reuses_documentation_only_directory(self) -> None:
+        """Preserve tracked scaffolding while creating portfolio metadata."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            portfolio_directory = root / 'portfolio/playground'
+            portfolio_directory.mkdir(parents=True)
+            readme = portfolio_directory / 'README.md'
+            readme.write_text('# Playground\n', encoding='utf-8')
+
+            created = create_portfolio(root, 'playground')
+
+            self.assertEqual(created, portfolio_directory)
+            self.assertEqual(readme.read_text(encoding='utf-8'), '# Playground\n')
+            self.assertTrue((portfolio_directory / 'portfolio.yaml').is_file())
+
+    def test_create_portfolio_refuses_existing_data(self) -> None:
+        """Do not replace or add to a directory containing portfolio data."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            portfolio_directory = root / 'portfolio/playground'
+            portfolio_directory.mkdir(parents=True)
+            ledger = portfolio_directory / 'transactions.csv'
+            ledger.write_text('existing data\n', encoding='utf-8')
+
+            with self.assertRaisesRegex(
+                FileExistsError, 'already contains portfolio data: transactions.csv'
+            ):
+                create_portfolio(root, 'playground')
+
+            self.assertEqual(ledger.read_text(encoding='utf-8'), 'existing data\n')
+            self.assertFalse((portfolio_directory / 'portfolio.yaml').exists())
+
     def test_import_opening_snapshot_does_not_replace_ledger(self) -> None:
         """Reject a second bootstrap import instead of replacing account facts."""
         with tempfile.TemporaryDirectory() as directory:

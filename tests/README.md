@@ -44,7 +44,9 @@ mise exec -- uv run -m unittest -v \
 - `playground_test.py` opens a fictional portfolio with USD 100,000, executes and
   persists its first equal-weight Mag7 rebalance, imports a dividend, and executes
   a second rebalance through the generic broker
-  contract at deterministic historical prices.
+  contract at deterministic historical prices. See the
+  [Playground portfolio regression](../sample-data/portfolio/playground/README.md)
+  for its inputs, lifecycle, scope, and focused test command.
 - `strategy_test.py` covers immutable strategy revisions and effective assignment
   history.
 - `validation_test.py` covers complete side-effect-free data-root validation and

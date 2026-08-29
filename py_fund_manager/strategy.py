@@ -30,6 +30,24 @@ from py_fund_manager.schemas import (
 )
 
 
+def analyze_strategy(strategy: Strategy) -> dict[str, object]:
+    """Summarize a validated strategy without changing its persisted content."""
+    weights = strategy.target_weights
+    return {
+        'name': strategy.metadata.name,
+        'display_name': strategy.metadata.display_name,
+        'benchmark': strategy.spec.benchmark,
+        'allocation_type': strategy.spec.allocation.type,
+        'position_count': len(weights),
+        'total_weight': str(sum(weights.values())),
+    }
+
+
+def strategy_tickers(strategy: Strategy) -> tuple[str, ...]:
+    """Return strategy ticker symbols in deterministic order."""
+    return tuple(sorted(strategy.target_weights))
+
+
 def canonical_strategy(strategy: Strategy) -> bytes:
     """Serialize validated strategy content in its canonical digest form."""
     document = strategy.model_dump(mode='json', by_alias=True, exclude_none=False)

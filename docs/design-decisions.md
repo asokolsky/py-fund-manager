@@ -95,8 +95,9 @@ conflicting latest observations are validation failures.
 
 The `Broker` protocol exposes one operation: fulfill a normalized `BrokerOrder`
 and return confirmed `Execution` records. `HistoricalBroker` satisfies that
-contract through supplied historical observations; future live adapters can
-satisfy it through external APIs without inheriting simulation state.
+contract by selecting the latest eligible observation from the historical price
+cache at its configured execution time. Future live adapters can satisfy the
+same contract through external APIs without inheriting simulation state.
 
 Plan validation, order normalization, fill validation, and execution-to-ledger
 mapping remain shared application services. The current synchronous workflow

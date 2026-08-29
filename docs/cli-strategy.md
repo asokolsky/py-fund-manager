@@ -1,8 +1,33 @@
 # Strategy CLI
 
-Strategy-assignment commands manage the effective strategy for a portfolio. The
+The top-level `strategy analyze` command validates and summarizes a standalone
+Strategy manifest. Strategy-assignment commands manage the effective strategy
+for a portfolio. The
 [schema reference](schemas.md#strategyhistory) defines their persisted
 result, and [Concepts](concepts.md#strategy) defines assignment semantics.
+
+## Analyze a strategy manifest
+
+```shell
+mise run py-fund-manager -- \
+  strategy analyze sample-data/strategy/mag7/strategy.yaml
+```
+
+The command strictly parses and validates the manifest, then prints its name,
+display name, benchmark, allocation type, position count, and total weight as
+YAML. It does not require a configured data root and does not modify the file.
+
+Use `--extract-tickers` to print sorted ticker symbols as a comma-separated
+value accepted by the `download` command:
+
+```shell
+tickers=$(
+  mise run py-fund-manager -- \
+    strategy analyze sample-data/strategy/mag7/strategy.yaml \
+    --extract-tickers
+)
+mise run py-fund-manager -- download 2026 --tickers="$tickers"
+```
 
 ## Show the effective strategy
 

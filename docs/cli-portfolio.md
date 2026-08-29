@@ -14,7 +14,10 @@ mise run py-fund-manager -- portfolio --create etrade-brokerage
 The command creates a conventional `portfolio.yaml` manifest below
 `portfolio/etrade-brokerage/` in the root selected by the required [global
 configuration](cli.md#data-root). Commands discover it by `kind: Portfolio`, so
-the filename can be changed without changing resource identity.
+the filename can be changed without changing resource identity. An existing
+directory is accepted only when it contains tracked scaffolding named
+`README.md` or `.gitignore`; any portfolio data or other entry makes creation
+fail before files are written.
 
 ## Import an opening snapshot
 

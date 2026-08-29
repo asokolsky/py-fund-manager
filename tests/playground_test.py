@@ -3,11 +3,12 @@
 import csv
 import tempfile
 import unittest
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
 from py_fund_manager.broker import execute_rebalance_plan
+from py_fund_manager.download import STOCKS_DIRECTORY
 from py_fund_manager.historical_broker import HistoricalBroker
 from py_fund_manager.portfolio import (
     create_portfolio,
@@ -17,9 +18,12 @@ from py_fund_manager.portfolio import (
     load_strategy,
     load_transactions,
 )
-from py_fund_manager.rebalance import derive_portfolio_state, plan_rebalance
+from py_fund_manager.rebalance import (
+    derive_portfolio_state,
+    load_latest_daily_prices,
+    plan_rebalance,
+)
 from py_fund_manager.schemas import (
-    PriceObservation,
     StrategyAssignment,
     StrategyRevisionReference,
     Transaction,
@@ -27,33 +31,44 @@ from py_fund_manager.schemas import (
 from py_fund_manager.strategy import strategy_revision
 
 OPENED_AT = datetime(2020, 1, 2, 16, tzinfo=UTC)
-FIRST_REBALANCE_AT = datetime(2020, 1, 3, 21, tzinfo=UTC)
+FIRST_PLAN_AT = datetime(2020, 1, 3, 15, tzinfo=UTC)
+FIRST_EXECUTION_AT = datetime(2020, 1, 3, 21, tzinfo=UTC)
 DIVIDEND_AT = datetime(2020, 3, 13, 16, tzinfo=UTC)
-SECOND_REBALANCE_AT = datetime(2020, 3, 13, 21, tzinfo=UTC)
+SECOND_PLAN_AT = datetime(2020, 3, 13, 21, tzinfo=UTC)
+SECOND_EXECUTION_AT = SECOND_PLAN_AT
+PRICE_HISTORY = STOCKS_DIRECTORY
+STRATEGY_PATH = Path(__file__).parents[1] / 'sample-data/strategy/mag7/strategy.yaml'
 
 
 class TestPlayground(unittest.TestCase):
-    """Protect the complete cash-funded Mag7 Playground workflow."""
+    """Cover the complete cash-funded Mag7 Playground workflow."""
 
     def test_open_rebalance_credit_dividend_and_rebalance_again(self) -> None:
         """Replay two deterministic rebalances around an imported dividend."""
+        strategy = load_strategy(STRATEGY_PATH)
+        tickers = set(strategy.target_weights)
+        missing = [
+            ticker
+            for ticker in sorted(tickers)
+            if not (
+                PRICE_HISTORY
+                / 'interval=1d'
+                / f'ticker={ticker}'
+                / 'year=2020/data.parquet'
+            ).is_file()
+        ]
+        if missing:
+            self.skipTest('download 2020 Playground prices for: ' + ', '.join(missing))
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             portfolio_directory = create_portfolio(root, 'playground')
-            opening = root / 'opening.csv'
-            opening.write_text(
-                'asset,quantity,amount,cost_basis\nUSD,,100000.00,\n',
-                encoding='utf-8',
-            )
+            opening = Path(__file__).parent / 'data/playground-opening.csv'
             import_opening_snapshot(
                 portfolio_directory,
                 opening,
                 occurred_at=OPENED_AT,
             )
             portfolio = load_portfolio(portfolio_directory / 'portfolio.yaml')
-            strategy = load_strategy(
-                Path(__file__).parents[1] / 'sample-data/strategy/mag7/strategy.yaml'
-            )
             assignment = StrategyAssignment(
                 id='initial-mag7',
                 effective_at=OPENED_AT,
@@ -63,7 +78,9 @@ class TestPlayground(unittest.TestCase):
                 ),
             )
 
-            first_prices = self._prices(strategy.target_weights, FIRST_REBALANCE_AT)
+            first_prices = load_latest_daily_prices(
+                tickers, FIRST_PLAN_AT, 'USD', PRICE_HISTORY
+            )
             opening_transactions = load_transactions(
                 portfolio_directory / 'transactions.csv'
             )
@@ -73,11 +90,11 @@ class TestPlayground(unittest.TestCase):
                 assignment,
                 strategy,
                 first_prices,
-                as_of=FIRST_REBALANCE_AT,
-                generated_at=FIRST_REBALANCE_AT,
+                as_of=FIRST_PLAN_AT,
+                generated_at=FIRST_PLAN_AT,
             )
             first_result = execute_rebalance_plan(
-                HistoricalBroker(first_prices),
+                HistoricalBroker(FIRST_EXECUTION_AT, PRICE_HISTORY),
                 portfolio,
                 opening_transactions,
                 first_plan,
@@ -85,6 +102,10 @@ class TestPlayground(unittest.TestCase):
             executions_file = root / 'activity-first-rebalance.csv'
             self._write_executions(executions_file, first_result.transactions)
             execution_import = import_activity(portfolio_directory, executions_file)
+            after_first = load_transactions(portfolio_directory / 'transactions.csv')
+            _, cash_after_first = derive_portfolio_state(
+                portfolio, after_first, DIVIDEND_AT
+            )
 
             dividend_file = root / 'activity-dividend.csv'
             dividend_file.write_text(
@@ -95,21 +116,23 @@ class TestPlayground(unittest.TestCase):
             dividend_import = import_activity(portfolio_directory, dividend_file)
             before_second = load_transactions(portfolio_directory / 'transactions.csv')
             positions_before, cash_before = derive_portfolio_state(
-                portfolio, before_second, SECOND_REBALANCE_AT
+                portfolio, before_second, SECOND_PLAN_AT
             )
 
-            second_prices = self._prices(strategy.target_weights, SECOND_REBALANCE_AT)
+            second_prices = load_latest_daily_prices(
+                tickers, SECOND_PLAN_AT, 'USD', PRICE_HISTORY
+            )
             second_plan = plan_rebalance(
                 portfolio,
                 before_second,
                 assignment,
                 strategy,
                 second_prices,
-                as_of=SECOND_REBALANCE_AT,
-                generated_at=SECOND_REBALANCE_AT,
+                as_of=SECOND_PLAN_AT,
+                generated_at=SECOND_PLAN_AT,
             )
             second_result = execute_rebalance_plan(
-                HistoricalBroker(second_prices),
+                HistoricalBroker(SECOND_EXECUTION_AT, PRICE_HISTORY),
                 portfolio,
                 before_second,
                 second_plan,
@@ -117,39 +140,29 @@ class TestPlayground(unittest.TestCase):
             positions_after, cash_after = derive_portfolio_state(
                 portfolio,
                 [*before_second, *second_result.transactions],
-                SECOND_REBALANCE_AT,
+                SECOND_EXECUTION_AT,
             )
 
         self.assertEqual(execution_import.imported, 7)
         self.assertEqual(dividend_import.imported, 1)
+        first_order = first_result.orders[0]
+        self.assertEqual(first_order.id, 'playground-20200103T150000000000Z-0001')
+        self.assertEqual(first_order.ticker, 'AAPL')
+        self.assertEqual(first_order.quantity, Decimal('190.254033'))
+        self.assertEqual(first_order.submitted_at, FIRST_PLAN_AT)
         self.assertEqual(len(first_result.executions), 7)
+        self.assertTrue(
+            all(
+                execution.price != first_prices[execution.ticker].price
+                for execution in first_result.executions
+            )
+        )
         self.assertEqual(set(positions_before), set(strategy.target_weights))
-        self.assertEqual(cash_before, first_plan.summary.estimated_ending_cash + 70)
+        self.assertEqual(cash_before, cash_after_first + 70)
         self.assertEqual(len(second_result.executions), 7)
         self.assertEqual(set(positions_after), set(strategy.target_weights))
-        self.assertEqual(cash_after, second_plan.summary.estimated_ending_cash)
         self.assertGreaterEqual(cash_after, Decimal(0))
         self.assertLess(cash_after, Decimal('0.01'))
-
-    @staticmethod
-    def _prices(
-        tickers: dict[str, Decimal], available_at: datetime
-    ) -> dict[str, PriceObservation]:
-        """Build deterministic USD 100 observations for every strategy ticker."""
-        return {
-            ticker: PriceObservation(
-                ticker=ticker,
-                as_of=date.fromisoformat(available_at.date().isoformat()),
-                available_at=available_at,
-                price=Decimal(100),
-                currency='USD',
-                source='Playground regression fixture',
-                source_partition=(
-                    f'interval=1d/ticker={ticker}/year={available_at.year}/data.parquet'
-                ),
-            )
-            for ticker in tickers
-        }
 
     @staticmethod
     def _write_executions(path: Path, transactions: tuple[Transaction, ...]) -> None:
