@@ -229,44 +229,52 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), 'Validated sample data.\n')
 
     def test_create_portfolio_from_opening_snapshot(self) -> None:
-        """Create a portfolio from an @-prefixed opening snapshot."""
-        arguments = [
-            cli.CLI_NAME,
-            'portfolio',
-            'create',
-            'etrade-brokerage',
-            '--broker',
-            'etrade',
-            '--account-id',
-            'brokerage-123',
-            '--as-of',
-            '2020-01-02T16:00:00Z',
-            '--balance=@opening.csv',
-        ]
-        data_directory = cli.Path('test-data')
-        portfolio_directory = data_directory / 'portfolio' / 'etrade-brokerage'
-        with (
-            patch.object(sys, 'argv', arguments),
-            patch.object(cli, 'data_directory', return_value=data_directory),
-            patch.object(
-                cli, 'create_portfolio', return_value=portfolio_directory
-            ) as create_mock,
-            patch.object(cli, 'import_opening_snapshot', return_value=2) as import_mock,
-        ):
-            result = cli.main()
+        """Create real portfolio artifacts from an @-prefixed opening snapshot."""
+        with tempfile.TemporaryDirectory() as directory:
+            data_directory = cli.Path(directory)
+            source = data_directory / 'opening.csv'
+            source.write_text(
+                'asset,quantity,amount,cost_basis\nUSD,,10000,\nAMAT,22,,4400\n',
+                encoding='utf-8',
+            )
+            arguments = [
+                cli.CLI_NAME,
+                'portfolio',
+                'create',
+                'etrade-brokerage',
+                '--broker',
+                'etrade',
+                '--account-id',
+                'brokerage-123',
+                '--as-of',
+                '2020-01-02T16:00:00Z',
+                f'--balance=@{source}',
+            ]
+            with (
+                patch.object(sys, 'argv', arguments),
+                patch.object(cli, 'data_directory', return_value=data_directory),
+                redirect_stdout(io.StringIO()),
+            ):
+                result = cli.main()
 
-        self.assertEqual(result, 0)
-        create_mock.assert_called_once_with(
-            data_directory,
-            'etrade-brokerage',
-            broker='etrade',
-            account_id='brokerage-123',
-        )
-        import_mock.assert_called_once_with(
-            portfolio_directory,
-            cli.Path('opening.csv'),
-            occurred_at=datetime(2020, 1, 2, 16, tzinfo=UTC),
-        )
+            portfolio_directory = data_directory / 'portfolio/etrade-brokerage'
+            _, portfolio = cli.find_manifest(portfolio_directory, 'Portfolio')
+            transactions = cli.load_transactions(
+                portfolio_directory / 'transactions.csv'
+            )
+            preserved = portfolio_directory / 'imports/opening.csv'
+
+            self.assertEqual(result, 0)
+            self.assertEqual(portfolio.spec.broker, 'etrade')
+            self.assertEqual(portfolio.spec.account_id, 'brokerage-123')
+            self.assertEqual(transactions[0].amount, Decimal(10000))
+            self.assertEqual(transactions[1].ticker, 'AMAT')
+            self.assertEqual(transactions[1].quantity, Decimal(22))
+            self.assertEqual(transactions[1].cost_basis, Decimal(4400))
+            self.assertEqual(
+                transactions[0].occurred_at, datetime(2020, 1, 2, 16, tzinfo=UTC)
+            )
+            self.assertEqual(preserved.read_text(), source.read_text())
 
     def test_create_portfolio_requires_broker_and_account_id(self) -> None:
         """Reject creation when either required account identity is absent."""
@@ -296,46 +304,79 @@ class TestCLI(unittest.TestCase):
             create_mock.assert_not_called()
 
     def test_create_portfolio_with_inline_opening_balances(self) -> None:
-        """Create a portfolio and initialize its ledger without an import file."""
-        arguments = [
-            cli.CLI_NAME,
-            'portfolio',
-            'create',
-            'playground',
-            '--broker',
-            'historical',
-            '--account-id',
-            'playground',
-            '--as-of',
-            '2020-01-02T08:00:00-08:00',
-            '--balance=USD:10000,AMAT:22',
-        ]
-        data_directory = cli.Path('test-data')
-        portfolio_directory = data_directory / 'portfolio/playground'
-        with (
-            patch.object(sys, 'argv', arguments),
-            patch.object(cli, 'data_directory', return_value=data_directory),
-            patch.object(
-                cli, 'create_portfolio', return_value=portfolio_directory
-            ) as create_mock,
-            patch.object(
-                cli, 'initialize_opening_balances', return_value=2
-            ) as initialize_mock,
-        ):
-            result = cli.main()
+        """Create real portfolio artifacts from inline opening balances."""
+        with tempfile.TemporaryDirectory() as directory:
+            data_directory = cli.Path(directory)
+            arguments = [
+                cli.CLI_NAME,
+                'portfolio',
+                'create',
+                'playground',
+                '--broker',
+                'historical',
+                '--account-id',
+                'playground',
+                '--as-of',
+                '2020-01-02T08:00:00-08:00',
+                '--balance=USD:10000,AMAT:22',
+            ]
+            with (
+                patch.object(sys, 'argv', arguments),
+                patch.object(cli, 'data_directory', return_value=data_directory),
+                redirect_stdout(io.StringIO()),
+            ):
+                result = cli.main()
 
-        self.assertEqual(result, 0)
-        create_mock.assert_called_once_with(
-            data_directory,
-            'playground',
-            broker='historical',
-            account_id='playground',
-        )
-        initialize_mock.assert_called_once_with(
-            portfolio_directory,
-            {'USD': Decimal(10000), 'AMAT': Decimal(22)},
-            occurred_at=datetime.fromisoformat('2020-01-02T08:00:00-08:00'),
-        )
+            portfolio_directory = data_directory / 'portfolio/playground'
+            _, portfolio = cli.find_manifest(portfolio_directory, 'Portfolio')
+            transactions = cli.load_transactions(
+                portfolio_directory / 'transactions.csv'
+            )
+
+            self.assertEqual(result, 0)
+            self.assertEqual(portfolio.spec.broker, 'historical')
+            self.assertEqual(portfolio.spec.account_id, 'playground')
+            self.assertEqual(transactions[0].amount, Decimal(10000))
+            self.assertEqual(transactions[1].ticker, 'AMAT')
+            self.assertEqual(transactions[1].quantity, Decimal(22))
+            self.assertEqual(
+                transactions[0].occurred_at,
+                datetime.fromisoformat('2020-01-02T08:00:00-08:00'),
+            )
+            self.assertFalse((portfolio_directory / 'imports').exists())
+
+    def test_create_portfolio_rolls_back_invalid_balance_file(self) -> None:
+        """Preserve scaffolding without leaving a partial portfolio resource."""
+        with tempfile.TemporaryDirectory() as directory:
+            data_directory = cli.Path(directory)
+            portfolio_directory = data_directory / 'portfolio/playground'
+            portfolio_directory.mkdir(parents=True)
+            readme = portfolio_directory / 'README.md'
+            readme.write_text('# Playground\n', encoding='utf-8')
+            arguments = [
+                cli.CLI_NAME,
+                'portfolio',
+                'create',
+                'playground',
+                '--broker',
+                'historical',
+                '--account-id',
+                'playground',
+                '--balance=@missing.csv',
+            ]
+            with (
+                patch.object(sys, 'argv', arguments),
+                patch.object(cli, 'data_directory', return_value=data_directory),
+                redirect_stdout(io.StringIO()),
+                redirect_stderr(io.StringIO()),
+            ):
+                result = cli.main()
+
+            self.assertEqual(result, 1)
+            self.assertEqual(readme.read_text(), '# Playground\n')
+            self.assertFalse((portfolio_directory / 'portfolio.yaml').exists())
+            self.assertFalse((portfolio_directory / 'transactions.csv').exists())
+            self.assertFalse((portfolio_directory / 'imports').exists())
 
     def test_legacy_portfolio_shape_is_rejected(self) -> None:
         """Reject a portfolio ID where the command subparser is required."""

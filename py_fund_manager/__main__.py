@@ -9,6 +9,7 @@ from argparse import (
     Namespace,
     RawTextHelpFormatter,
 )
+from contextlib import suppress
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -267,20 +268,29 @@ def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuse
                     account_id=args.account_id,
                 )
                 print(f'Created portfolio {args.portfolio_id} in {portfolio_directory}')
-                if isinstance(args.balance, Path):
-                    imported = import_opening_snapshot(
-                        portfolio_directory,
-                        args.balance,
-                        occurred_at=args.as_of,
-                    )
-                    print(f'Imported {imported} opening facts from {args.balance}')
-                elif args.balance is not None:
-                    initialized = initialize_opening_balances(
-                        portfolio_directory,
-                        args.balance,
-                        occurred_at=args.as_of,
-                    )
-                    print(f'Initialized {initialized} opening balances')
+                balance_message: str | None = None
+                try:
+                    if isinstance(args.balance, Path):
+                        imported = import_opening_snapshot(
+                            portfolio_directory,
+                            args.balance,
+                            occurred_at=args.as_of,
+                        )
+                        balance_message = (
+                            f'Imported {imported} opening facts from {args.balance}'
+                        )
+                    elif args.balance is not None:
+                        initialized = initialize_opening_balances(
+                            portfolio_directory,
+                            args.balance,
+                            occurred_at=args.as_of,
+                        )
+                        balance_message = f'Initialized {initialized} opening balances'
+                except OSError, TypeError, ValueError:
+                    _rollback_portfolio_creation(portfolio_directory)
+                    raise
+                if balance_message is not None:
+                    print(balance_message)
             elif args.portfolio_command == 'import':
                 import_result = import_activity(
                     directory / 'portfolio' / args.portfolio_id,
@@ -310,6 +320,17 @@ def load_rebalance_plan(path: Path) -> RebalancePlan:
         return RebalancePlan.model_validate(document)
     except (OSError, TypeError, ValueError) as error:
         raise ValueError(f'{path}: invalid rebalance plan: {error}') from error
+
+
+def _rollback_portfolio_creation(portfolio_directory: Path) -> None:
+    """Remove only artifacts written by an unsuccessful creation command."""
+    for filename in ('transactions.csv', 'portfolio.yaml'):
+        (portfolio_directory / filename).unlink(missing_ok=True)
+    imports_directory = portfolio_directory / 'imports'
+    with suppress(OSError):
+        imports_directory.rmdir()
+    with suppress(OSError):
+        portfolio_directory.rmdir()
 
 
 def effective_time(value: str) -> datetime:
