@@ -216,4 +216,5 @@ Each array item must match the strict `Execution` schema:
 The importer maps `buy` and `sell` executions to ledger transactions. Execution
 `id` becomes the stable `external_id`, enabling the same idempotency and conflict
 checks as activity CSV. The execution currency must equal the portfolio base
-currency, items must be chronological, and the array must not be empty.
+currency, and the array must not be empty. Array items may follow broker order;
+the importer writes their ledger transactions chronologically by execution time.

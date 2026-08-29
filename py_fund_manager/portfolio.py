@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast, overload
 import yaml
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
     from decimal import Decimal
 
 from py_fund_manager.schemas import (
@@ -525,13 +525,20 @@ def validate_transaction_ledger(
     transactions: list[Transaction] | tuple[Transaction, ...],
     *,
     path: Path | None = None,
+    context_for_transaction: Callable[[Transaction], str] | None = None,
 ) -> None:
     """Require stable identities and chronological ordering across a ledger."""
     seen_ids: set[str] = set()
     seen_external_ids: set[str] = set()
     previous: Transaction | None = None
     for index, transaction in enumerate(transactions, start=2):
-        context = f'{path}:{index}' if path is not None else f'transaction row {index}'
+        context = (
+            context_for_transaction(transaction)
+            if context_for_transaction is not None
+            else f'{path}:{index}'
+            if path is not None
+            else f'transaction row {index}'
+        )
         if transaction.id in seen_ids:
             msg = f'{context}: duplicate transaction id {transaction.id}'
             raise ValueError(msg)
@@ -650,7 +657,7 @@ def _read_execution_json(source: Path, base_currency: str) -> list[Transaction]:
     if not document:
         msg = f'{source}: execution JSON contains no executions'
         raise ValueError(msg)
-    transactions: list[Transaction] = []
+    indexed_transactions: list[tuple[int, Transaction]] = []
     for index, item in enumerate(document):
         context = f'{source}: execution {index}'
         try:
@@ -663,8 +670,18 @@ def _read_execution_json(source: Path, base_currency: str) -> list[Transaction]:
                 f'portfolio uses {base_currency}'
             )
             raise ValueError(msg)
-        transactions.append(execution_transaction(execution))
-    validate_transaction_ledger(transactions, path=source)
+        indexed_transactions.append((index, execution_transaction(execution)))
+    indexed_transactions.sort(key=lambda item: item[1].occurred_at)
+    transactions = [transaction for _, transaction in indexed_transactions]
+    source_indexes = {
+        id(transaction): index for index, transaction in indexed_transactions
+    }
+    validate_transaction_ledger(
+        transactions,
+        context_for_transaction=lambda transaction: (
+            f'{source}: execution {source_indexes[id(transaction)]}'
+        ),
+    )
     return transactions
 
 

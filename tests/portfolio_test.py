@@ -609,6 +609,118 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
                 (portfolio_directory / 'imports' / 'executions.json').exists()
             )
 
+    def test_import_activity_sorts_execution_json_chronologically(self) -> None:
+        """Accept broker executions ordered by order rather than fill time."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            opening = root / 'opening.csv'
+            opening.write_text('asset,amount\nUSD,1000.00\n', encoding='utf-8')
+            executions = root / 'executions.json'
+            items = [
+                {
+                    'id': 'fill-later',
+                    'order_id': 'order-1',
+                    'ticker': 'MSFT',
+                    'side': 'buy',
+                    'quantity': '1',
+                    'price': '100',
+                    'currency': 'USD',
+                    'executed_at': '2020-01-03T22:00:00Z',
+                },
+                {
+                    'id': 'fill-earlier',
+                    'order_id': 'order-2',
+                    'ticker': 'AAPL',
+                    'side': 'buy',
+                    'quantity': '1',
+                    'price': '100',
+                    'currency': 'USD',
+                    'executed_at': '2020-01-03T21:00:00Z',
+                },
+            ]
+            executions.write_text(json.dumps(items), encoding='utf-8')
+            portfolio_directory = create_portfolio(
+                root,
+                'brokerage',
+                broker='historical',
+                account_id='brokerage',
+            )
+            import_opening_snapshot(
+                portfolio_directory,
+                opening,
+                occurred_at=datetime(2020, 1, 2, 16, tzinfo=UTC),
+            )
+
+            result = import_activity(portfolio_directory, executions)
+            transactions = load_transactions(portfolio_directory / 'transactions.csv')
+
+        self.assertEqual(result.imported, 2)
+        self.assertEqual(
+            [transaction.external_id for transaction in transactions[1:]],
+            ['fill-earlier', 'fill-later'],
+        )
+
+    def test_import_activity_rejects_invalid_formats(self) -> None:
+        """Reject malformed JSON shapes and unsupported import extensions."""
+        cases = {
+            'malformed.json': ('{', ValueError, 'invalid execution JSON'),
+            'mapping.json': ('{}', TypeError, 'must contain an array'),
+            'empty.json': ('[]', ValueError, 'contains no executions'),
+            'activity.txt': ('unused', ValueError, r'\.csv or \.json extension'),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            opening = root / 'opening.csv'
+            opening.write_text('asset,amount\nUSD,1000.00\n', encoding='utf-8')
+            portfolio_directory = create_portfolio(
+                root,
+                'brokerage',
+                broker='historical',
+                account_id='brokerage',
+            )
+            import_opening_snapshot(portfolio_directory, opening)
+
+            for filename, (content, error_type, message) in cases.items():
+                source = root / filename
+                source.write_text(content, encoding='utf-8')
+                with (
+                    self.subTest(filename=filename),
+                    self.assertRaisesRegex(error_type, message),
+                ):
+                    import_activity(portfolio_directory, source)
+
+    def test_import_activity_reports_json_execution_index(self) -> None:
+        """Identify the original array element in ledger validation errors."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            opening = root / 'opening.csv'
+            opening.write_text('asset,amount\nUSD,1000.00\n', encoding='utf-8')
+            executions = root / 'executions-duplicate.json'
+            item = {
+                'id': 'fill-1',
+                'order_id': 'order-1',
+                'ticker': 'AAPL',
+                'side': 'buy',
+                'quantity': '1',
+                'price': '100',
+                'currency': 'USD',
+                'executed_at': '2020-01-03T21:00:00Z',
+            }
+            executions.write_text(json.dumps([item, item]), encoding='utf-8')
+            portfolio_directory = create_portfolio(
+                root,
+                'brokerage',
+                broker='historical',
+                account_id='brokerage',
+            )
+            import_opening_snapshot(portfolio_directory, opening)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                'executions-duplicate.json: execution 1: duplicate transaction id',
+            ):
+                import_activity(portfolio_directory, executions)
+
     def test_import_activity_skips_identical_known_event(self) -> None:
         """Treat an overlapping broker export as an idempotent update."""
         with tempfile.TemporaryDirectory() as directory:
