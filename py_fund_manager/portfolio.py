@@ -525,19 +525,20 @@ def validate_transaction_ledger(
     transactions: list[Transaction] | tuple[Transaction, ...],
     *,
     path: Path | None = None,
-    context_for_transaction: Callable[[Transaction], str] | None = None,
+    context_for_transaction: Callable[[int, Transaction], str] | None = None,
 ) -> None:
     """Require stable identities and chronological ordering across a ledger."""
     seen_ids: set[str] = set()
     seen_external_ids: set[str] = set()
     previous: Transaction | None = None
-    for index, transaction in enumerate(transactions, start=2):
+    for position, transaction in enumerate(transactions):
+        row_number = position + 2
         context = (
-            context_for_transaction(transaction)
+            context_for_transaction(position, transaction)
             if context_for_transaction is not None
-            else f'{path}:{index}'
+            else f'{path}:{row_number}'
             if path is not None
-            else f'transaction row {index}'
+            else f'transaction row {row_number}'
         )
         if transaction.id in seen_ids:
             msg = f'{context}: duplicate transaction id {transaction.id}'
@@ -552,7 +553,12 @@ def validate_transaction_ledger(
         if transaction.external_id is not None:
             seen_external_ids.add(transaction.external_id)
         if previous is not None and transaction.occurred_at < previous.occurred_at:
-            msg = f'{context}: transaction {transaction.id} occurs before {previous.id}'
+            identifier = transaction.external_id or transaction.id
+            previous_identifier = previous.external_id or previous.id
+            msg = (
+                f'{context}: transaction {identifier!r} occurs before '
+                f'{previous_identifier!r}'
+            )
             raise ValueError(msg)
         previous = transaction
 
@@ -673,13 +679,10 @@ def _read_execution_json(source: Path, base_currency: str) -> list[Transaction]:
         indexed_transactions.append((index, execution_transaction(execution)))
     indexed_transactions.sort(key=lambda item: item[1].occurred_at)
     transactions = [transaction for _, transaction in indexed_transactions]
-    source_indexes = {
-        id(transaction): index for index, transaction in indexed_transactions
-    }
     validate_transaction_ledger(
         transactions,
-        context_for_transaction=lambda transaction: (
-            f'{source}: execution {source_indexes[id(transaction)]}'
+        context_for_transaction=lambda position, _transaction: (
+            f'{source}: execution {indexed_transactions[position][0]}'
         ),
     )
     return transactions
@@ -770,7 +773,12 @@ def _read_activity_csv(source: Path, base_currency: str) -> list[Transaction]:
     if not transactions:
         msg = f'{source}: activity CSV contains no events'
         raise ValueError(msg)
-    validate_transaction_ledger(transactions, path=source)
+    validate_transaction_ledger(
+        transactions,
+        context_for_transaction=lambda position, transaction: (
+            f'{source}:{position + 2}: external_id {transaction.external_id!r}'
+        ),
+    )
     return transactions
 
 

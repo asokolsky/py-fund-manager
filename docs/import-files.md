@@ -163,8 +163,9 @@ Security events use the portfolio base currency.
 Activity imports are append-only and use `external_id` for idempotency. Repeating
 the same file, or importing an overlapping file containing identical known events,
 skips those events. Reusing an archived filename with different content fails.
-New events that predate the latest ledger event also fail; import broker activity
-in chronological batches.
+CSV rows must be chronological, and new events that predate the latest ledger
+event also fail; import broker activity in chronological batches. Execution JSON
+differs because broker-order arrays are sorted by execution time during import.
 
 Buys and sells require either an exact `amount` or a `price`;
 when only a price is supplied, cash movement is derived as price times

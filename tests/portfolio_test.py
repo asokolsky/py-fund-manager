@@ -783,6 +783,13 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
                 '2020-02-13T09:00:00-08:00,dividend,USD,20.00,DIV-FEB\n',
                 encoding='utf-8',
             )
+            out_of_order = root / 'out-of-order.csv'
+            out_of_order.write_text(
+                'occurred_at,event,asset,amount,external_id\n'
+                '2020-03-13T09:00:00-07:00,dividend,USD,24.60,DIV-LATER\n'
+                '2020-02-13T09:00:00-08:00,dividend,USD,20.00,DIV-EARLIER\n',
+                encoding='utf-8',
+            )
             portfolio_directory = create_portfolio(
                 root,
                 'brokerage',
@@ -794,6 +801,12 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
                 opening,
                 occurred_at=datetime(2020, 1, 2, 16, tzinfo=UTC),
             )
+            with self.assertRaisesRegex(
+                ValueError,
+                "out-of-order.csv:3: external_id 'DIV-EARLIER'.*"
+                "'DIV-EARLIER' occurs before 'DIV-LATER'",
+            ):
+                import_activity(portfolio_directory, out_of_order)
             import_activity(portfolio_directory, march)
 
             with self.assertRaisesRegex(
