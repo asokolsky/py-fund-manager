@@ -195,7 +195,6 @@ def plan_rebalance(
     prices: dict[str, PriceObservation],
     *,
     as_of: datetime,
-    contribution: Decimal = Decimal(0),
     withdrawal: Decimal = Decimal(0),
     generated_at: datetime | None = None,
 ) -> RebalancePlan:
@@ -206,11 +205,7 @@ def plan_rebalance(
     if strategy_revision(strategy) != assignment.strategy.revision:
         msg = 'strategy does not match the effective assignment revision'
         raise ValueError(msg)
-    contribution = normalize_cash_flow_amount(contribution, 'contribution')
     withdrawal = normalize_cash_flow_amount(withdrawal, 'withdrawal')
-    if contribution and withdrawal:
-        msg = 'contribution and withdrawal are mutually exclusive'
-        raise ValueError(msg)
     positions, cash = derive_portfolio_state(portfolio, transactions, as_of)
     tickers = set(positions) | set(strategy.target_weights)
     missing_prices = sorted(tickers - prices.keys())
@@ -237,9 +232,9 @@ def plan_rebalance(
         for ticker, quantity in positions.items()
     }
     holdings_value = sum(current_values.values(), Decimal(0))
-    target_portfolio_value = holdings_value + cash + contribution - withdrawal
+    target_portfolio_value = holdings_value + cash - withdrawal
     if target_portfolio_value < 0:
-        msg = 'withdrawal exceeds current portfolio value plus contribution'
+        msg = 'withdrawal exceeds current portfolio value'
         raise ValueError(msg)
 
     orders: list[RebalanceOrder] = []
@@ -314,7 +309,6 @@ def plan_rebalance(
             currency=portfolio.spec.base_currency,
             holdings_value=holdings_value.quantize(CENT),
             available_cash=cash,
-            contribution=contribution,
             withdrawal=withdrawal,
             target_portfolio_value=target_portfolio_value.quantize(CENT),
         ),
@@ -324,7 +318,7 @@ def plan_rebalance(
             sell_orders=sum(order.side == OrderSide.SELL for order in orders),
             estimated_buys=buys,
             estimated_sells=sells,
-            estimated_ending_cash=(cash + contribution - withdrawal + sells - buys),
+            estimated_ending_cash=(cash - withdrawal + sells - buys),
         ),
         warnings=warnings,
     )
@@ -335,7 +329,6 @@ def rebalance_portfolio(
     portfolio_id: str,
     as_of: datetime,
     *,
-    contribution: Decimal = Decimal(0),
     withdrawal: Decimal = Decimal(0),
     stocks_directory: Path = STOCKS_DIRECTORY,
 ) -> RebalancePlan:
@@ -365,7 +358,6 @@ def rebalance_portfolio(
         strategy,
         prices,
         as_of=as_of,
-        contribution=contribution,
         withdrawal=withdrawal,
     )
 

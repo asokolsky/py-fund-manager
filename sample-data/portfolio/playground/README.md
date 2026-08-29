@@ -327,7 +327,7 @@ the resulting positions and cash in
 
 ## 9. Contribute USD 5,000 and rebalance
 
-The following command shows how the contribution activity fixture is generated:
+The following command shows how the deposit activity fixture is generated:
 
 ```shell
 printf '%s\n' \
@@ -350,9 +350,9 @@ Expected outcome: the command imports one event from the committed
 preserves it as `portfolio/playground/imports/activity-2020-06-15.csv`, and
 appends one USD 5,000 deposit to `portfolio/playground/transactions.csv`.
 Available cash increases by exactly USD 5,000. This uses a confirmed ledger
-event, not the unconfirmed `rebalance --contribute` planning assumption.
+event, so the cash exists in the ledger before rebalancing.
 
-Generate the contribution rebalance at the 2020-06-15 close:
+Generate the deposit-funded rebalance at the 2020-06-15 close:
 
 ```shell
 mise run py-fund-manager -- \
@@ -361,7 +361,7 @@ mise run py-fund-manager -- \
 ```
 
 Expected outcome: `rebalance-plan-2020-06-15.json` is created from the persisted
-post-dividend positions and contribution-adjusted cash. It contains seven Mag7
+post-dividend positions and deposit-adjusted cash. It contains seven Mag7
 adjustment intents and does not modify the ledger.
 
 Execute the plan at the same eligible close:
@@ -379,7 +379,7 @@ directory with seven confirmed fills timestamped
 `portfolio/playground/transactions.csv`; the fills remain external results until
 step 10 imports them.
 
-## 10. Import the contribution-rebalance executions
+## 10. Import the deposit-funded rebalance executions
 
 Convert and import the confirmed fills:
 
@@ -403,7 +403,7 @@ confirmed fills to `portfolio/playground/transactions.csv`. The final portfolio
 holds all seven strategy securities and retains nonnegative residual cash below
 one cent.
 
-The regression imports the USD 5,000 contribution, verifies the exact cash
+The regression imports the USD 5,000 deposit, verifies the exact cash
 increase, generates and executes the third plan without changing the ledger,
 then imports all seven fills and checks the final positions and residual cash in
 [`playground_test.py`](../../../tests/playground_test.py).

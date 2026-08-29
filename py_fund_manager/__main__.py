@@ -182,11 +182,7 @@ def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuse
     portfolio_set_parser.add_argument('--reason')
     portfolio_rebalance_parser = portfolio_commands.add_parser('rebalance')
     portfolio_rebalance_parser.add_argument('portfolio_id')
-    cash_flow = portfolio_rebalance_parser.add_mutually_exclusive_group()
-    cash_flow.add_argument(
-        '--contribute', type=nonnegative_amount, default=Decimal(0), dest='contribution'
-    )
-    cash_flow.add_argument(
+    portfolio_rebalance_parser.add_argument(
         '--withdraw', type=nonnegative_amount, default=Decimal(0), dest='withdrawal'
     )
     portfolio_rebalance_parser.add_argument('--as-of', type=effective_time)
@@ -446,7 +442,6 @@ def _rebalance_command(directory: Path, portfolio_id: str, args: Namespace) -> i
         directory,
         portfolio_id,
         args.as_of or datetime.now(UTC),
-        contribution=args.contribution,
         withdrawal=args.withdrawal,
     )
     print(plan.model_dump_json(indent=2))

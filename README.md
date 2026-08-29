@@ -11,7 +11,7 @@ downloading historical market prices.
 - Store positions in a validated, append-oriented transaction ledger.
 - Assign effective-dated strategies with immutable content revisions.
 - Validate strict YAML manifests, resource identities, and revision references.
-- Generate strict JSON rebalance plans for contributions and withdrawals.
+- Generate strict JSON rebalance plans from confirmed cash and planned withdrawals.
 - Simulate reviewed rebalance plans deterministically at recorded historical prices.
 - Download Yahoo Finance prices into atomic, year-partitioned Parquet files.
 

@@ -97,13 +97,25 @@ mise run py-fund-manager -- \
   portfolio rebalance brokerage
 ```
 
-Plan a rebalance after contributing USD 10,000:
+To add money, first record the confirmed deposit in an activity CSV:
 
-```shell
-mise run py-fund-manager -- \
-  portfolio rebalance brokerage \
-  --contribute 10000.00
+```csv
+occurred_at,event,asset,amount,external_id
+2026-08-26T12:00:00-07:00,deposit,USD,10000.00,deposit-20260826
 ```
+
+Import the deposit, then generate a new plan from the updated cash balance:
+
+```sh
+mise run py-fund-manager -- \
+  portfolio import brokerage deposit.csv
+
+mise run py-fund-manager -- \
+  portfolio rebalance brokerage
+```
+
+Use the transaction time and stable external identifier reported by the account.
+The imported deposit becomes ledger cash before the planner can spend it.
 
 Plan a USD 5,000 withdrawal and the sales needed to fund it:
 
@@ -113,9 +125,9 @@ mise run py-fund-manager -- \
   --withdraw 5000.00
 ```
 
-`--contribute` and `--withdraw` accept nonnegative amounts with at most 18 integer
-digits and two decimal places in the portfolio's base currency. They are mutually
-exclusive planning assumptions, not confirmed cash transactions.
+`--withdraw` accepts a nonnegative amount with at most 18 integer digits and two
+decimal places in the portfolio's base currency. It reserves cash for a planned
+withdrawal; import the confirmed withdrawal separately after it occurs.
 
 Select a historical planning time with an ISO 8601 timestamp containing a
 timezone offset. The default is the current time:
@@ -195,8 +207,6 @@ nonnegative resulting cash, and resulting positions. Confirmed executions are
 written as JSON but are not appended automatically; convert them to the canonical
 activity CSV and import that file after review.
 
-Plans containing `--contribute` cannot be executed because they assume cash that
-is not yet in the ledger. Record the completed deposit and generate a new plan.
 A plan containing `--withdraw` can be executed: its sell orders raise the
 reserved cash, and execution fails unless the confirmed fills leave at least the
 planned withdrawal amount available. Import those fills before recording the

@@ -180,7 +180,7 @@ The rebalance command emits a validated JSON document to standard output:
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "portfolio_id": "brokerage",
   "strategy_assignment_id": "assignment-example",
   "strategy": {
@@ -193,9 +193,8 @@ The rebalance command emits a validated JSON document to standard output:
     "currency": "USD",
     "holdings_value": "95000.00",
     "available_cash": "5000.00",
-    "contribution": "10000.00",
     "withdrawal": "0.00",
-    "target_portfolio_value": "110000.00"
+    "target_portfolio_value": "100000.00"
   },
   "orders": [
     {
@@ -204,23 +203,23 @@ The rebalance command emits a validated JSON document to standard output:
       "current_quantity": "10",
       "current_value": "2200.00",
       "target_weight": "0.061234567890",
-      "target_value": "6735.80",
+      "target_value": "6123.46",
       "estimated_price": "220.00",
       "price_as_of": "2026-08-26",
       "price_available_at": "2026-08-26T16:00:00-04:00",
       "price_source": "Yahoo Finance via yfinance",
       "price_source_partition": "interval=1d/ticker=AAPL/year=2026/data.parquet",
-      "quantity": "20.617272",
-      "estimated_notional": "4535.799840",
+      "quantity": "17.833894",
+      "estimated_notional": "3923.456680",
       "reason": "underweight"
     }
   ],
   "summary": {
     "buy_orders": 1,
     "sell_orders": 0,
-    "estimated_buys": "4535.799840",
+    "estimated_buys": "3923.456680",
     "estimated_sells": "0.00",
-    "estimated_ending_cash": "10464.200160"
+    "estimated_ending_cash": "1076.543320"
   },
   "warnings": []
 }
@@ -231,8 +230,8 @@ are `underweight`, `overweight`, or `not_in_strategy`. The plan identifies the
 effective assignment and immutable revision. It is neither a broker order nor an
 execution report and is never written to the transaction ledger.
 
-Version `2` requires exact execution arithmetic plus price availability and
-source provenance. Each estimated notional equals rounded quantity multiplied by
-estimated price. Summary amounts reconcile to the order notionals, preserving
-residual cash from fractional-quantity rounding. Consumers must reject unsupported
-versions.
+Version `3` requires confirmed ledger cash rather than a contribution assumption,
+plus exact execution arithmetic, price availability, and source provenance. Each
+estimated notional equals rounded quantity multiplied by estimated price. Summary
+amounts reconcile to the order notionals, preserving residual cash from
+fractional-quantity rounding. Consumers must reject unsupported versions.

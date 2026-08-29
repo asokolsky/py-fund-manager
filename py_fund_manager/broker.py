@@ -117,12 +117,6 @@ def _validate_plan_inputs(
             f'portfolio uses {portfolio.spec.base_currency}'
         )
         raise ValueError(msg)
-    if plan.valuation.contribution:
-        msg = (
-            'contribution assumptions cannot be executed; confirm the deposit '
-            'in the ledger and generate a new plan'
-        )
-        raise ValueError(msg)
     positions, available_cash = derive_portfolio_state(
         portfolio, list(transactions), plan.valuation.as_of
     )

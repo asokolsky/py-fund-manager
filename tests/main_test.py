@@ -72,7 +72,7 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(stderr.getvalue(), '')
 
     def test_cash_flow_amount_rejects_sub_cent_precision(self) -> None:
-        """Reject contribution and withdrawal values smaller than one cent."""
+        """Reject withdrawal values smaller than one cent."""
         self.assertEqual(cli.nonnegative_amount('100.00'), Decimal('100.00'))
         self.assertEqual(cli.nonnegative_amount('100.000'), Decimal('100.00'))
         self.assertEqual(cli.nonnegative_amount('0E-100'), Decimal('0.00'))
@@ -477,42 +477,6 @@ class TestCLI(unittest.TestCase):
             'Adopt direct replication',
         )
 
-    def test_rebalance_portfolio_with_contribution(self) -> None:
-        """Parse a contribution and write the rebalance plan as JSON."""
-        arguments = [
-            cli.CLI_NAME,
-            'portfolio',
-            'rebalance',
-            'brokerage',
-            '--contribute',
-            '10000.00',
-            '--as-of',
-            '2026-08-26T12:00:00Z',
-        ]
-        data_directory = cli.Path('test-data')
-        plan = Mock()
-        plan.model_dump_json.return_value = '{"schema_version":2}'
-        stdout = io.StringIO()
-        with (
-            patch.object(sys, 'argv', arguments),
-            patch.object(cli, 'data_directory', return_value=data_directory),
-            patch.object(
-                cli, 'rebalance_portfolio', return_value=plan
-            ) as rebalance_mock,
-            redirect_stdout(stdout),
-        ):
-            result = cli.main()
-
-        self.assertEqual(result, 0)
-        rebalance_mock.assert_called_once_with(
-            data_directory,
-            'brokerage',
-            datetime(2026, 8, 26, 12, tzinfo=UTC),
-            contribution=Decimal('10000.00'),
-            withdrawal=Decimal(0),
-        )
-        self.assertEqual(stdout.getvalue(), '{"schema_version":2}\n')
-
     def test_rebalance_portfolio_with_withdrawal(self) -> None:
         """Parse a withdrawal and pass it to rebalance planning."""
         arguments = [
@@ -527,7 +491,7 @@ class TestCLI(unittest.TestCase):
         ]
         data_directory = cli.Path('test-data')
         plan = Mock()
-        plan.model_dump_json.return_value = '{"schema_version":2}'
+        plan.model_dump_json.return_value = '{"schema_version":3}'
         with (
             patch.object(sys, 'argv', arguments),
             patch.object(cli, 'data_directory', return_value=data_directory),
@@ -543,13 +507,12 @@ class TestCLI(unittest.TestCase):
             data_directory,
             'brokerage',
             datetime(2026, 8, 26, 12, tzinfo=UTC),
-            contribution=Decimal(0),
             withdrawal=Decimal('5000.00'),
         )
 
     def test_removed_rebalance_option_names_are_rejected(self) -> None:
-        """Reject the superseded contribution and withdrawal option names."""
-        for option in ('--contribution', '--withdrawal'):
+        """Reject removed contribution and superseded withdrawal option names."""
+        for option in ('--contribute', '--contribution', '--withdrawal'):
             with (
                 self.subTest(option=option),
                 patch.object(
