@@ -7,7 +7,7 @@ from datetime import UTC
 from decimal import Decimal
 from typing import Protocol
 
-from py_fund_manager.portfolio import validate_transaction_ledger
+from py_fund_manager.portfolio import execution_transaction, validate_transaction_ledger
 from py_fund_manager.rebalance import derive_portfolio_state
 from py_fund_manager.schemas import (
     BrokerOrder,
@@ -17,7 +17,6 @@ from py_fund_manager.schemas import (
     RebalanceOrder,
     RebalancePlan,
     Transaction,
-    TransactionType,
 )
 
 
@@ -73,26 +72,6 @@ def execute_rebalance_plan(
         raise ValueError(msg)
     _validate_expected_positions(positions, executions, final_positions)
     return RebalanceExecutionResult(orders, tuple(executions), tuple(facts))
-
-
-def execution_transaction(execution: Execution) -> Transaction:
-    """Map one confirmed broker fill into an immutable ledger transaction."""
-    return Transaction(
-        id=f'execution-{execution.id}',
-        occurred_at=execution.executed_at,
-        type=(
-            TransactionType.BUY
-            if execution.side == OrderSide.BUY
-            else TransactionType.SELL
-        ),
-        ticker=execution.ticker,
-        quantity=execution.quantity,
-        price=execution.price,
-        amount=execution.quantity * execution.price,
-        currency=execution.currency,
-        fees=execution.fees,
-        external_id=execution.id,
-    )
 
 
 def _validate_plan_inputs(

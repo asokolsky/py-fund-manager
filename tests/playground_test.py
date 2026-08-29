@@ -1,6 +1,6 @@
 """Regression tests for the deterministic Playground portfolio lifecycle."""
 
-import csv
+import json
 import tempfile
 import unittest
 from datetime import UTC, date, datetime
@@ -26,10 +26,10 @@ from py_fund_manager.rebalance import (
     plan_rebalance,
 )
 from py_fund_manager.schemas import (
+    Execution,
     OrderSide,
     StrategyAssignment,
     StrategyRevisionReference,
-    Transaction,
 )
 from py_fund_manager.strategy import strategy_revision
 
@@ -101,8 +101,8 @@ class TestPlayground(unittest.TestCase):
                 opening_transactions,
                 first_plan,
             )
-            executions_file = root / 'rebalance-2020-01-03.csv'
-            self._write_executions(executions_file, first_result.transactions)
+            executions_file = root / 'executions-2020-01-03.json'
+            self._write_executions(executions_file, first_result.executions)
             execution_import = import_activity(portfolio_directory, executions_file)
             after_first = load_transactions(portfolio_directory / 'transactions.csv')
             _, cash_after_first = derive_portfolio_state(
@@ -134,8 +134,8 @@ class TestPlayground(unittest.TestCase):
                 before_second,
                 second_plan,
             )
-            second_executions_file = root / 'rebalance-2020-03-13.csv'
-            self._write_executions(second_executions_file, second_result.transactions)
+            second_executions_file = root / 'executions-2020-03-13.json'
+            self._write_executions(second_executions_file, second_result.executions)
             second_execution_import = import_activity(
                 portfolio_directory, second_executions_file
             )
@@ -174,8 +174,8 @@ class TestPlayground(unittest.TestCase):
             ledger_after_third_execution = load_transactions(
                 portfolio_directory / 'transactions.csv'
             )
-            third_executions_file = root / 'rebalance-2020-06-15.csv'
-            self._write_executions(third_executions_file, third_result.transactions)
+            third_executions_file = root / 'executions-2020-06-15.json'
+            self._write_executions(third_executions_file, third_result.executions)
             third_execution_import = import_activity(
                 portfolio_directory, third_executions_file
             )
@@ -208,9 +208,9 @@ class TestPlayground(unittest.TestCase):
             ledger_after_withdrawal_execution = load_transactions(
                 portfolio_directory / 'transactions.csv'
             )
-            withdrawal_executions_file = root / 'rebalance-2020-09-02.csv'
+            withdrawal_executions_file = root / 'executions-2020-09-02.json'
             self._write_executions(
-                withdrawal_executions_file, withdrawal_result.transactions
+                withdrawal_executions_file, withdrawal_result.executions
             )
             withdrawal_execution_import = import_activity(
                 portfolio_directory, withdrawal_executions_file
@@ -264,12 +264,12 @@ class TestPlayground(unittest.TestCase):
         self.assertEqual(
             preserved_imports,
             {
-                'rebalance-2020-01-03.csv',
+                'executions-2020-01-03.json',
                 'activity-2020-03-13.csv',
-                'rebalance-2020-03-13.csv',
+                'executions-2020-03-13.json',
                 'activity-2020-06-15.csv',
-                'rebalance-2020-06-15.csv',
-                'rebalance-2020-09-02.csv',
+                'executions-2020-06-15.json',
+                'executions-2020-09-02.json',
                 'activity-2020-09-03.csv',
             },
         )
@@ -324,34 +324,16 @@ class TestPlayground(unittest.TestCase):
             pq.write_table(table, path)
 
     @staticmethod
-    def _write_executions(path: Path, transactions: tuple[Transaction, ...]) -> None:
-        """Write confirmed simulated purchases as canonical activity input."""
-        fields = (
-            'occurred_at',
-            'event',
-            'asset',
-            'quantity',
-            'amount',
-            'price',
-            'fees',
-            'external_id',
+    def _write_executions(path: Path, executions: tuple[Execution, ...]) -> None:
+        """Write canonical broker executions exactly as the CLI emits them."""
+        path.write_text(
+            json.dumps(
+                [execution.model_dump(mode='json') for execution in executions],
+                indent=2,
+            )
+            + '\n',
+            encoding='utf-8',
         )
-        with path.open('w', newline='', encoding='utf-8') as activity_file:
-            writer = csv.DictWriter(activity_file, fieldnames=fields)
-            writer.writeheader()
-            for transaction in transactions:
-                writer.writerow(
-                    {
-                        'occurred_at': transaction.occurred_at.isoformat(),
-                        'event': transaction.type,
-                        'asset': transaction.ticker,
-                        'quantity': transaction.quantity,
-                        'amount': transaction.amount,
-                        'price': transaction.price,
-                        'fees': transaction.fees,
-                        'external_id': transaction.external_id,
-                    }
-                )
 
 
 if __name__ == '__main__':

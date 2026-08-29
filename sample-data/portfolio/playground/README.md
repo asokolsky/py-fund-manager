@@ -202,41 +202,17 @@ interactive command is covered in
 
 ## 6. Import confirmed executions
 
-Convert the seven confirmed fills into the canonical activity CSV:
-
-```shell
-jq -r '
-  (
-    ["occurred_at", "event", "asset", "quantity", "price", "fees", "external_id"],
-    (
-      .[] |
-      [
-        .executed_at,
-        .side,
-        .ticker,
-        .quantity,
-        .price,
-        (.fees // "0"),
-        .id
-      ]
-    )
-  ) |
-  @csv
-' executions-2020-01-03.json > rebalance-2020-01-03.csv
-```
-
-Import that CSV:
+Import the canonical execution JSON directly:
 
 ```sh
 mise run py-fund-manager -- \
-  portfolio import playground rebalance-2020-01-03.csv
+  portfolio import playground executions-2020-01-03.json
 ```
 
-Expected outcome: `rebalance-2020-01-03.csv` contains a header and seven rows in
-execution order. The import command reports seven imported activity events,
-preserves the source as
-`sample-data/portfolio/playground/imports/rebalance-2020-01-03.csv`, and appends
-seven buy facts with confirmed execution prices to
+Expected outcome: the import command reports seven imported activity events,
+preserves `executions-2020-01-03.json` below
+`sample-data/portfolio/playground/imports/`, and appends seven buy facts with
+confirmed execution prices to
 `sample-data/portfolio/playground/transactions.csv`. Re-importing an identical
 file skips the known events instead of duplicating them.
 
@@ -299,27 +275,18 @@ mise run py-fund-manager -- broker historical rebalance-plan-2020-03-13.json \
   > executions-2020-03-13.json
 ```
 
-Convert and import the confirmed fills:
+Import the confirmed fills:
 
 ```shell
-jq -r '
-  (
-    ["occurred_at", "event", "asset", "quantity", "price", "fees", "external_id"],
-    (.[] | [.executed_at, .side, .ticker, .quantity, .price, (.fees // "0"), .id])
-  ) |
-  @csv
-' executions-2020-03-13.json > rebalance-2020-03-13.csv
-
 mise run py-fund-manager -- \
-  portfolio import playground rebalance-2020-03-13.csv
+  portfolio import playground executions-2020-03-13.json
 ```
 
-Expected outcome: `executions-2020-03-13.json` and
-`rebalance-2020-03-13.csv` are created in the current directory. The import
-preserves `portfolio/playground/imports/rebalance-2020-03-13.csv` and appends
-seven confirmed fills to `portfolio/playground/transactions.csv`. The portfolio
-still holds all seven strategy securities and retains nonnegative residual cash
-below one cent.
+Expected outcome: the import preserves
+`portfolio/playground/imports/executions-2020-03-13.json` and appends seven
+confirmed fills to `portfolio/playground/transactions.csv`. The portfolio still
+holds all seven strategy securities and retains nonnegative residual cash below
+one cent.
 
 The regression verifies the second plan, imports all historical fills, and checks
 the resulting positions and cash in
@@ -381,24 +348,15 @@ step 10 imports them.
 
 ## 10. Import the deposit-funded rebalance executions
 
-Convert and import the confirmed fills:
+Import the confirmed fills:
 
 ```shell
-jq -r '
-  (
-    ["occurred_at", "event", "asset", "quantity", "price", "fees", "external_id"],
-    (.[] | [.executed_at, .side, .ticker, .quantity, .price, (.fees // "0"), .id])
-  ) |
-  @csv
-' executions-2020-06-15.json > rebalance-2020-06-15.csv
-
 mise run py-fund-manager -- \
-  portfolio import playground rebalance-2020-06-15.csv
+  portfolio import playground executions-2020-06-15.json
 ```
 
-Expected outcome: `rebalance-2020-06-15.csv` is created in the current directory
-from `executions-2020-06-15.json`. The import preserves
-`portfolio/playground/imports/rebalance-2020-06-15.csv` and appends seven
+Expected outcome: the import preserves
+`portfolio/playground/imports/executions-2020-06-15.json` and appends seven
 confirmed fills to `portfolio/playground/transactions.csv`. The final portfolio
 holds all seven strategy securities and retains nonnegative residual cash below
 one cent.
@@ -445,25 +403,17 @@ fills but does not modify `portfolio/playground/transactions.csv`.
 
 ## 13. Import the withdrawal-funding executions
 
-Convert the confirmed fills and import them into the portfolio ledger:
+Import the confirmed fills into the portfolio ledger:
 
 ```shell
-jq -r '
-  (
-    ["occurred_at", "event", "asset", "quantity", "price", "fees", "external_id"],
-    (.[] | [.executed_at, .side, .ticker, .quantity, .price, (.fees // "0"), .id])
-  ) |
-  @csv
-' executions-2020-09-02.json > rebalance-2020-09-02.csv
-
 mise run py-fund-manager -- \
-  portfolio import playground rebalance-2020-09-02.csv
+  portfolio import playground executions-2020-09-02.json
 ```
 
-Expected outcome: `rebalance-2020-09-02.csv` is created in the current directory,
-preserved as `portfolio/playground/imports/rebalance-2020-09-02.csv`, and its
-confirmed sells are appended to `portfolio/playground/transactions.csv`. Derived
-cash is now at least USD 1,000, but no withdrawal has occurred yet.
+Expected outcome: `executions-2020-09-02.json` is preserved below
+`portfolio/playground/imports/`, and its confirmed sells are appended to
+`portfolio/playground/transactions.csv`. Derived cash is now at least USD 1,000,
+but no withdrawal has occurred yet.
 
 ## 14. Transfer USD 1,000 to an outside account
 

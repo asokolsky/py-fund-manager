@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import json
 import os
 import shutil
 import tempfile
@@ -15,12 +16,14 @@ from typing import TYPE_CHECKING, Any, Literal, cast, overload
 import yaml
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
     from decimal import Decimal
 
 from py_fund_manager.schemas import (
     PORTFOLIO_ID_PATTERN,
     DisplayMetadata,
+    Execution,
+    OrderSide,
     Portfolio,
     PortfolioSpec,
     Strategy,
@@ -264,7 +267,7 @@ def initialize_opening_balances(
 
 
 def import_activity(portfolio_directory: Path, source: Path) -> ActivityImportResult:
-    """Append canonical broker activity while skipping identical known events."""
+    """Append CSV activity or JSON executions, skipping identical known events."""
     if not source.is_file():
         msg = f"activity file '{source}' does not exist or is not a file"
         raise TypeError(msg)
@@ -278,7 +281,7 @@ def import_activity(portfolio_directory: Path, source: Path) -> ActivityImportRe
         expected_name=portfolio_directory.name,
     )
     existing = load_transactions(ledger_path)
-    incoming = _read_activity(source, portfolio.spec.base_currency)
+    incoming = _read_import(source, portfolio.spec.base_currency)
     known = {
         transaction.external_id: transaction
         for transaction in existing
@@ -337,6 +340,26 @@ def import_activity(portfolio_directory: Path, source: Path) -> ActivityImportRe
         preserved_source.unlink()
         raise
     return ActivityImportResult(imported=len(additions), skipped=skipped)
+
+
+def execution_transaction(execution: Execution) -> Transaction:
+    """Map one confirmed broker fill into an immutable ledger transaction."""
+    return Transaction(
+        id=f'execution-{execution.id}',
+        occurred_at=execution.executed_at,
+        type=(
+            TransactionType.BUY
+            if execution.side == OrderSide.BUY
+            else TransactionType.SELL
+        ),
+        ticker=execution.ticker,
+        quantity=execution.quantity,
+        price=execution.price,
+        amount=execution.quantity * execution.price,
+        currency=execution.currency,
+        fees=execution.fees,
+        external_id=execution.id,
+    )
 
 
 def load_portfolio(path: Path) -> Portfolio:
@@ -502,13 +525,21 @@ def validate_transaction_ledger(
     transactions: list[Transaction] | tuple[Transaction, ...],
     *,
     path: Path | None = None,
+    context_for_transaction: Callable[[int, Transaction], str] | None = None,
 ) -> None:
     """Require stable identities and chronological ordering across a ledger."""
     seen_ids: set[str] = set()
     seen_external_ids: set[str] = set()
     previous: Transaction | None = None
-    for index, transaction in enumerate(transactions, start=2):
-        context = f'{path}:{index}' if path is not None else f'transaction row {index}'
+    for position, transaction in enumerate(transactions):
+        row_number = position + 2
+        context = (
+            context_for_transaction(position, transaction)
+            if context_for_transaction is not None
+            else f'{path}:{row_number}'
+            if path is not None
+            else f'transaction row {row_number}'
+        )
         if transaction.id in seen_ids:
             msg = f'{context}: duplicate transaction id {transaction.id}'
             raise ValueError(msg)
@@ -522,7 +553,12 @@ def validate_transaction_ledger(
         if transaction.external_id is not None:
             seen_external_ids.add(transaction.external_id)
         if previous is not None and transaction.occurred_at < previous.occurred_at:
-            msg = f'{context}: transaction {transaction.id} occurs before {previous.id}'
+            identifier = transaction.external_id or transaction.id
+            previous_identifier = previous.external_id or previous.id
+            msg = (
+                f'{context}: transaction {identifier!r} occurs before '
+                f'{previous_identifier!r}'
+            )
             raise ValueError(msg)
         previous = transaction
 
@@ -604,7 +640,55 @@ def _read_opening_snapshot(
     return transactions
 
 
-def _read_activity(source: Path, base_currency: str) -> list[Transaction]:
+def _read_import(source: Path, base_currency: str) -> list[Transaction]:
+    """Read one supported portfolio import format."""
+    suffix = source.suffix.lower()
+    if suffix == '.csv':
+        return _read_activity_csv(source, base_currency)
+    if suffix == '.json':
+        return _read_execution_json(source, base_currency)
+    msg = f'{source}: portfolio imports must use a .csv or .json extension'
+    raise ValueError(msg)
+
+
+def _read_execution_json(source: Path, base_currency: str) -> list[Transaction]:
+    """Validate canonical broker execution JSON and map it to ledger facts."""
+    try:
+        document = json.loads(source.read_text(encoding='utf-8'))
+    except (OSError, TypeError, ValueError) as error:
+        raise ValueError(f'{source}: invalid execution JSON: {error}') from error
+    if not isinstance(document, list):
+        msg = f'{source}: execution JSON must contain an array'
+        raise TypeError(msg)
+    if not document:
+        msg = f'{source}: execution JSON contains no executions'
+        raise ValueError(msg)
+    indexed_transactions: list[tuple[int, Transaction]] = []
+    for index, item in enumerate(document):
+        context = f'{source}: execution {index}'
+        try:
+            execution = Execution.model_validate(item)
+        except (TypeError, ValueError) as error:
+            raise ValueError(f'{context}: {error}') from error
+        if execution.currency != base_currency:
+            msg = (
+                f'{context}: execution uses {execution.currency}; '
+                f'portfolio uses {base_currency}'
+            )
+            raise ValueError(msg)
+        indexed_transactions.append((index, execution_transaction(execution)))
+    indexed_transactions.sort(key=lambda item: item[1].occurred_at)
+    transactions = [transaction for _, transaction in indexed_transactions]
+    validate_transaction_ledger(
+        transactions,
+        context_for_transaction=lambda position, _transaction: (
+            f'{source}: execution {indexed_transactions[position][0]}'
+        ),
+    )
+    return transactions
+
+
+def _read_activity_csv(source: Path, base_currency: str) -> list[Transaction]:
     """Validate canonical independently timestamped broker activity rows."""
     transactions: list[Transaction] = []
     seen_external_ids: set[str] = set()
@@ -689,7 +773,12 @@ def _read_activity(source: Path, base_currency: str) -> list[Transaction]:
     if not transactions:
         msg = f'{source}: activity CSV contains no events'
         raise ValueError(msg)
-    validate_transaction_ledger(transactions, path=source)
+    validate_transaction_ledger(
+        transactions,
+        context_for_transaction=lambda position, transaction: (
+            f'{source}:{position + 2}: external_id {transaction.external_id!r}'
+        ),
+    )
     return transactions
 
 

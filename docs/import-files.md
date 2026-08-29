@@ -10,6 +10,7 @@ canonical manifests and ledgers described in the [storage contract](README.md).
 | --- | --- | --- |
 | Opening snapshot CSV | `portfolio create ID --balance=@FILE` | Establish opening cash and positions at one account boundary. |
 | Activity CSV | `portfolio import ID FILE` | Append independently timestamped broker events. |
+| Execution JSON | `portfolio import ID FILE` | Append confirmed fills emitted by a broker command. |
 
 Portfolio creation also accepts inline opening facts through
 `--balance=ASSET:VALUE,...`. This path writes the canonical transaction ledger
@@ -24,6 +25,7 @@ adapter exists yet.
 
 - The source file must exist and be a regular file.
 - CSV files may include a UTF-8 byte-order mark.
+- Portfolio imports use a `.csv` or `.json` filename extension.
 - Blank optional fields are treated as absent.
 - Validation happens before the transaction ledger or preserved source is written.
 - A successful import copies the source into the portfolio's `imports/`
@@ -161,8 +163,9 @@ Security events use the portfolio base currency.
 Activity imports are append-only and use `external_id` for idempotency. Repeating
 the same file, or importing an overlapping file containing identical known events,
 skips those events. Reusing an archived filename with different content fails.
-New events that predate the latest ledger event also fail; import broker activity
-in chronological batches.
+CSV rows must be chronological, and new events that predate the latest ledger
+event also fail; import broker activity in chronological batches. Execution JSON
+differs because broker-order arrays are sorted by execution time during import.
 
 Buys and sells require either an exact `amount` or a `price`;
 when only a price is supplied, cash movement is derived as price times
@@ -182,3 +185,37 @@ New events must follow the existing ledger chronologically. The complete updated
 ledger is validated and replaced atomically only after every new event passes.
 The source file is retained in `imports/`; give overlapping exports distinct
 basenames so each can be preserved.
+
+## Execution JSON
+
+Execution JSON is the canonical array emitted by commands such as
+`broker historical`. Import it directly without converting it to CSV:
+
+```shell
+mise run py-fund-manager -- \
+  portfolio import brokerage executions-2026-08-26.json
+```
+
+Each array item must match the strict `Execution` schema:
+
+```json
+[
+  {
+    "id": "brokerage-order-1-fill-0001",
+    "order_id": "brokerage-order-1",
+    "ticker": "AAPL",
+    "side": "buy",
+    "quantity": "2",
+    "price": "220.00",
+    "fees": "0.00",
+    "currency": "USD",
+    "executed_at": "2026-08-26T14:00:00-07:00"
+  }
+]
+```
+
+The importer maps `buy` and `sell` executions to ledger transactions. Execution
+`id` becomes the stable `external_id`, enabling the same idempotency and conflict
+checks as activity CSV. The execution currency must equal the portfolio base
+currency, and the array must not be empty. Array items may follow broker order;
+the importer writes their ledger transactions chronologically by execution time.
