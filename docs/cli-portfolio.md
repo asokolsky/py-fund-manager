@@ -63,7 +63,7 @@ the broker statement's effective timestamp and must include a timezone offset;
 without it, the import time is used. Existing imports and transaction ledgers
 are not replaced.
 
-## Import broker activity
+## Import broker activity or executions
 
 Append confirmed events after the opening boundary:
 
@@ -73,11 +73,18 @@ mise run py-fund-manager -- \
   /path/to/private/activity-2020-03.csv
 ```
 
-Every event carries its own timestamp and stable source identity. Identical events
-from overlapping exports are skipped; conflicting reuse of an identity fails the
-import. Dividend reinvestment is recorded as a dividend followed by a buy. See
-the [Activity CSV contract](import-files.md#activity-csv) for the complete schema
-and append rules.
+The same command accepts canonical execution JSON produced by a broker command:
+
+```shell
+mise run py-fund-manager -- \
+  portfolio import brokerage executions-2026-08-26.json
+```
+
+Every event or execution carries its own timestamp and stable source identity.
+Identical facts from overlapping imports are skipped; conflicting reuse of an
+identity fails the import. Dividend reinvestment is recorded as a dividend
+followed by a buy. See the [Import Files reference](import-files.md) for the CSV
+and JSON contracts and append rules.
 
 ## Rebalance a portfolio
 
