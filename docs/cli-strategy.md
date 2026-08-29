@@ -32,7 +32,7 @@ mise run py-fund-manager -- download 2026 --tickers="$tickers"
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio etrade-brokerage strategy show
+  portfolio strategy etrade-brokerage show
 ```
 
 By default, the command shows the assignment effective now. Use `--as-of` with an
@@ -43,7 +43,7 @@ another time.
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio etrade-brokerage strategy history
+  portfolio strategy etrade-brokerage history
 ```
 
 The command shows assignments in effective-time order without modifying them.
@@ -52,7 +52,7 @@ The command shows assignments in effective-time order without modifying them.
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio etrade-brokerage strategy set SnP500-direct \
+  portfolio strategy etrade-brokerage set SnP500-direct \
   --as-of 2026-09-01T09:00:00-07:00 \
   --reason "Move to direct S&P 500 replication"
 ```

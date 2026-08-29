@@ -10,9 +10,13 @@ import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, cast, overload
+from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
 import yaml
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from decimal import Decimal
 
 from py_fund_manager.schemas import (
     PORTFOLIO_ID_PATTERN,
@@ -112,7 +116,13 @@ class ActivityImportResult:
     skipped: int
 
 
-def create_portfolio(data_directory: Path, portfolio_id: str) -> Path:
+def create_portfolio(
+    data_directory: Path,
+    portfolio_id: str,
+    *,
+    broker: str,
+    account_id: str,
+) -> Path:
     """Create a portfolio directory and its initial YAML configuration."""
     if not PORTFOLIO_ID_PATTERN.fullmatch(portfolio_id):
         msg = 'portfolio ID must use lowercase kebab-case'
@@ -128,14 +138,13 @@ def create_portfolio(data_directory: Path, portfolio_id: str) -> Path:
         entries = ', '.join(blocking_entries)
         msg = f'{portfolio_directory} already contains portfolio data: {entries}'
         raise FileExistsError(msg)
-    broker = portfolio_id.partition('-')[0]
     portfolio = Portfolio(
         apiVersion='v1',
         kind='Portfolio',
         metadata=DisplayMetadata(name=portfolio_id, display_name=portfolio_id),
         spec=PortfolioSpec(
             broker=broker,
-            account_id=portfolio_id,
+            account_id=account_id,
             base_currency='USD',
         ),
     )
@@ -189,6 +198,62 @@ def import_opening_snapshot(
     except Exception:
         preserved_source.unlink()
         raise
+    return len(transactions)
+
+
+def initialize_opening_balances(
+    portfolio_directory: Path,
+    balances: Mapping[str, Decimal],
+    *,
+    occurred_at: datetime | None = None,
+) -> int:
+    """Write inline opening cash and position balances to a new ledger."""
+    ledger_path = portfolio_directory / 'transactions.csv'
+    if ledger_path.exists():
+        msg = f'{ledger_path} already exists; opening positions cannot be replaced'
+        raise FileExistsError(msg)
+    if not balances:
+        msg = 'opening balances must contain at least one asset'
+        raise ValueError(msg)
+
+    opening_time = occurred_at or datetime.now(UTC)
+    if opening_time.tzinfo is None:
+        msg = 'opening balance time must include a UTC offset'
+        raise TypeError(msg)
+    _, portfolio = find_manifest(
+        portfolio_directory,
+        'Portfolio',
+        expected_name=portfolio_directory.name,
+    )
+    transactions: list[Transaction] = []
+    for index, (asset, value) in enumerate(balances.items(), start=1):
+        is_cash = asset == portfolio.spec.base_currency
+        transaction_type = (
+            TransactionType.OPENING_CASH
+            if is_cash
+            else TransactionType.OPENING_POSITION
+        )
+        try:
+            transactions.append(
+                Transaction.model_validate(
+                    {
+                        'id': f'opening-{index:06d}',
+                        'occurred_at': opening_time,
+                        'type': transaction_type,
+                        'ticker': None if is_cash else asset,
+                        'quantity': None if is_cash else value,
+                        'amount': value if is_cash else None,
+                        'currency': portfolio.spec.base_currency,
+                    }
+                )
+            )
+        except ValueError as error:
+            raise ValueError(f'opening balance {asset}: {error}') from error
+    validate_transaction_ledger(transactions)
+    _atomic_write_csv(
+        ledger_path,
+        [_transaction_row(transaction) for transaction in transactions],
+    )
     return len(transactions)
 
 

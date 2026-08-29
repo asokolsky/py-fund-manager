@@ -8,8 +8,13 @@ canonical manifests and ledgers described in the [storage contract](README.md).
 
 | File | Command | Purpose |
 | --- | --- | --- |
-| Opening snapshot CSV | `portfolio --create ID import FILE` | Establish opening cash and positions at one account boundary. |
-| Activity CSV | `portfolio ID import FILE` | Append independently timestamped broker events. |
+| Opening snapshot CSV | `portfolio create ID --balance=@FILE` | Establish opening cash and positions at one account boundary. |
+| Activity CSV | `portfolio import ID FILE` | Append independently timestamped broker events. |
+
+Portfolio creation also accepts inline opening facts through
+`--balance=ASSET:VALUE,...`. This path writes the canonical transaction ledger
+without importing or preserving a source file; see the
+[portfolio CLI guide](cli-portfolio.md#create-a-portfolio).
 
 Broker-native exports are not accepted directly. They require an adapter that
 produces one of the canonical formats documented here. No broker-specific import
@@ -37,9 +42,11 @@ is used.
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio --create etrade-brokerage \
-  import /path/to/private/opening.csv \
-  --as-of 2020-01-02T08:00:00-08:00
+  portfolio create etrade-brokerage \
+  --broker etrade \
+  --account-id brokerage-123 \
+  --as-of 2020-01-02T08:00:00-08:00 \
+  --balance=@/path/to/private/opening.csv
 ```
 
 The timestamp must be ISO 8601 with a timezone offset. Every generated ledger
@@ -100,8 +107,8 @@ An activity CSV updates an existing portfolio after its opening boundary:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio etrade-brokerage \
-  import /path/to/private/activity-2020-03.csv
+  portfolio import etrade-brokerage \
+  /path/to/private/activity-2020-03.csv
 ```
 
 Each row is one confirmed broker event. A dividend reinvestment is represented by

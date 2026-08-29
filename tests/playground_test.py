@@ -15,7 +15,7 @@ from py_fund_manager.historical_broker import HistoricalBroker
 from py_fund_manager.portfolio import (
     create_portfolio,
     import_activity,
-    import_opening_snapshot,
+    initialize_opening_balances,
     load_portfolio,
     load_strategy,
     load_transactions,
@@ -59,11 +59,15 @@ class TestPlayground(unittest.TestCase):
             root = Path(directory)
             price_history = root / 'stocks-by-ticker'
             self._write_price_history(price_history, tickers)
-            portfolio_directory = create_portfolio(root, 'playground')
-            opening = Path(__file__).parent / 'data/playground-opening.csv'
-            import_opening_snapshot(
+            portfolio_directory = create_portfolio(
+                root,
+                'playground',
+                broker='historical',
+                account_id='playground',
+            )
+            initialize_opening_balances(
                 portfolio_directory,
-                opening,
+                {'USD': Decimal('100000.00')},
                 occurred_at=OPENED_AT,
             )
             portfolio = load_portfolio(portfolio_directory / 'portfolio.yaml')
@@ -260,7 +264,6 @@ class TestPlayground(unittest.TestCase):
         self.assertEqual(
             preserved_imports,
             {
-                'playground-opening.csv',
                 'rebalance-2020-01-03.csv',
                 'activity-2020-03-13.csv',
                 'rebalance-2020-03-13.csv',

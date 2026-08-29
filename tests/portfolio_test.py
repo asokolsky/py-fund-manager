@@ -13,6 +13,7 @@ from py_fund_manager.portfolio import (
     find_manifest,
     import_activity,
     import_opening_snapshot,
+    initialize_opening_balances,
     load_portfolio,
     load_strategy,
     load_transactions,
@@ -119,7 +120,9 @@ spec: {broker: example, account_id: second, base_currency: USD}
     def test_manifest_discovery_does_not_depend_on_filename(self) -> None:
         """Resolve a Portfolio by kind after its conventional file is renamed."""
         with tempfile.TemporaryDirectory() as directory:
-            portfolio_directory = create_portfolio(Path(directory), 'sample')
+            portfolio_directory = create_portfolio(
+                Path(directory), 'sample', broker='example', account_id='sample'
+            )
             original = portfolio_directory / 'portfolio.yaml'
             renamed = portfolio_directory / 'account-details.yaml'
             original.rename(renamed)
@@ -154,10 +157,13 @@ spec: {broker: example, account_id: sample, base_currency: USD}
     def test_manifest_discovery_rejects_duplicate_kinds(self) -> None:
         """Reject two current Portfolio manifests in one resource directory."""
         with tempfile.TemporaryDirectory() as directory:
-            portfolio_directory = create_portfolio(Path(directory), 'sample')
+            portfolio_directory = create_portfolio(
+                Path(directory), 'sample', broker='example', account_id='sample'
+            )
             duplicate = portfolio_directory / 'duplicate.yaml'
             duplicate.write_text(
-                (portfolio_directory / 'portfolio.yaml').read_text(), encoding='utf-8'
+                (portfolio_directory / 'portfolio.yaml').read_text(),
+                encoding='utf-8',
             )
 
             with self.assertRaisesRegex(ValueError, 'multiple Portfolio manifests'):
@@ -289,12 +295,17 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
     def test_create_portfolio(self) -> None:
         """Create loadable account configuration in the portfolio hierarchy."""
         with tempfile.TemporaryDirectory() as directory:
-            portfolio_directory = create_portfolio(Path(directory), 'etrade-brokerage')
+            portfolio_directory = create_portfolio(
+                Path(directory),
+                'etrade-brokerage',
+                broker='etrade',
+                account_id='brokerage-123',
+            )
             portfolio = load_portfolio(portfolio_directory / 'portfolio.yaml')
 
         self.assertEqual(portfolio.metadata.name, 'etrade-brokerage')
         self.assertEqual(portfolio.spec.broker, 'etrade')
-        self.assertEqual(portfolio.spec.account_id, 'etrade-brokerage')
+        self.assertEqual(portfolio.spec.account_id, 'brokerage-123')
 
     def test_import_opening_snapshot_preserves_source_and_writes_ledger(
         self,
@@ -309,7 +320,12 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
                 'AAPL,12.5,,2100.00\n',
                 encoding='utf-8',
             )
-            portfolio_directory = create_portfolio(root, 'etrade-roth-ira')
+            portfolio_directory = create_portfolio(
+                root,
+                'etrade-roth-ira',
+                broker='etrade',
+                account_id='roth-ira',
+            )
 
             count = import_opening_snapshot(portfolio_directory, source)
             transactions = load_transactions(portfolio_directory / 'transactions.csv')
@@ -336,7 +352,12 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
                 'asset,amount\nUSD,100000.00\n',
                 encoding='utf-8',
             )
-            portfolio_directory = create_portfolio(root, 'playground')
+            portfolio_directory = create_portfolio(
+                root,
+                'playground',
+                broker='historical',
+                account_id='playground',
+            )
 
             count = import_opening_snapshot(
                 portfolio_directory,
@@ -350,6 +371,32 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
         self.assertEqual(transactions[0].amount, Decimal('100000.00'))
         self.assertEqual(transactions[0].occurred_at, statement_time)
 
+    def test_initialize_opening_balances_writes_cash_and_positions(self) -> None:
+        """Create an opening ledger directly from explicit asset balances."""
+        statement_time = datetime(2020, 1, 2, 16, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            portfolio_directory = create_portfolio(
+                root,
+                'playground',
+                broker='historical',
+                account_id='playground',
+            )
+
+            count = initialize_opening_balances(
+                portfolio_directory,
+                {'USD': Decimal(10000), 'AMAT': Decimal(22)},
+                occurred_at=statement_time,
+            )
+            transactions = load_transactions(portfolio_directory / 'transactions.csv')
+
+        self.assertEqual(count, 2)
+        self.assertEqual(transactions[0].type, TransactionType.OPENING_CASH)
+        self.assertEqual(transactions[0].amount, Decimal(10000))
+        self.assertEqual(transactions[1].type, TransactionType.OPENING_POSITION)
+        self.assertEqual(transactions[1].ticker, 'AMAT')
+        self.assertEqual(transactions[1].quantity, Decimal(22))
+
     def test_create_portfolio_reuses_documentation_only_directory(self) -> None:
         """Preserve tracked scaffolding while creating portfolio metadata."""
         with tempfile.TemporaryDirectory() as directory:
@@ -359,7 +406,12 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
             readme = portfolio_directory / 'README.md'
             readme.write_text('# Playground\n', encoding='utf-8')
 
-            created = create_portfolio(root, 'playground')
+            created = create_portfolio(
+                root,
+                'playground',
+                broker='historical',
+                account_id='playground',
+            )
 
             self.assertEqual(created, portfolio_directory)
             self.assertEqual(readme.read_text(encoding='utf-8'), '# Playground\n')
@@ -377,7 +429,12 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
             with self.assertRaisesRegex(
                 FileExistsError, 'already contains portfolio data: transactions.csv'
             ):
-                create_portfolio(root, 'playground')
+                create_portfolio(
+                    root,
+                    'playground',
+                    broker='historical',
+                    account_id='playground',
+                )
 
             self.assertEqual(ledger.read_text(encoding='utf-8'), 'existing data\n')
             self.assertFalse((portfolio_directory / 'portfolio.yaml').exists())
@@ -391,7 +448,12 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
                 'asset,quantity\nAAPL,1\n',
                 encoding='utf-8',
             )
-            portfolio_directory = create_portfolio(root, 'etrade-roth-ira')
+            portfolio_directory = create_portfolio(
+                root,
+                'etrade-roth-ira',
+                broker='etrade',
+                account_id='roth-ira',
+            )
             import_opening_snapshot(portfolio_directory, source)
 
             with self.assertRaises(FileExistsError):
@@ -410,7 +472,12 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
                 '2020-03-13T12:01:00-04:00,buy,AAPL,0.09,,273.33,0,trade-1\n',
                 encoding='utf-8',
             )
-            portfolio_directory = create_portfolio(root, 'etrade-brokerage')
+            portfolio_directory = create_portfolio(
+                root,
+                'etrade-brokerage',
+                broker='etrade',
+                account_id='brokerage',
+            )
             import_opening_snapshot(
                 portfolio_directory,
                 opening,
@@ -444,7 +511,12 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
             first.write_text(row, encoding='utf-8')
             second.write_text(row, encoding='utf-8')
             conflicting.write_text(row.replace('24.60', '25.00'), encoding='utf-8')
-            portfolio_directory = create_portfolio(root, 'etrade-brokerage')
+            portfolio_directory = create_portfolio(
+                root,
+                'etrade-brokerage',
+                broker='etrade',
+                account_id='brokerage',
+            )
             import_opening_snapshot(
                 portfolio_directory,
                 opening,
@@ -485,7 +557,12 @@ tx-001,2026-08-21T14:32:00+00:00,sell,AAPL,1,2,,,USD,,
                 '2020-02-13T09:00:00-08:00,dividend,USD,20.00,DIV-FEB\n',
                 encoding='utf-8',
             )
-            portfolio_directory = create_portfolio(root, 'etrade-brokerage')
+            portfolio_directory = create_portfolio(
+                root,
+                'etrade-brokerage',
+                broker='etrade',
+                account_id='brokerage',
+            )
             import_opening_snapshot(
                 portfolio_directory,
                 opening,

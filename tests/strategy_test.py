@@ -155,7 +155,9 @@ apiVersion: v1
         """Append assignments and resolve the one effective at a requested time."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            create_portfolio(root, 'example-account')
+            create_portfolio(
+                root, 'example-account', broker='example', account_id='account'
+            )
             strategy_directory = root / 'strategy' / 'balanced'
             strategy_directory.mkdir(parents=True)
             (strategy_directory / 'strategy.yaml').write_text(
@@ -195,7 +197,9 @@ apiVersion: v1
         """Reject chronology before creating a revision for changed content."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            create_portfolio(root, 'example-account')
+            create_portfolio(
+                root, 'example-account', broker='example', account_id='account'
+            )
             strategy_directory = root / 'strategy' / 'balanced'
             strategy_directory.mkdir(parents=True)
             (strategy_directory / 'strategy.yaml').write_text(

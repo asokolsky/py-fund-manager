@@ -8,16 +8,38 @@ opening snapshot, and imports ongoing broker activity. See the
 ## Create a portfolio
 
 ```shell
-mise run py-fund-manager -- portfolio --create etrade-brokerage
+mise run py-fund-manager -- \
+  portfolio create etrade-brokerage \
+  --broker etrade \
+  --account-id brokerage-123
 ```
 
-The command creates a conventional `portfolio.yaml` manifest below
-`portfolio/etrade-brokerage/` in the root selected by the required [global
-configuration](cli.md#data-root). Commands discover it by `kind: Portfolio`, so
+The command creates `portfolio/etrade-brokerage/portfolio.yaml` in the
+root selected by the required [global configuration](cli.md#data-root).
+`--broker` identifies the broker adapter or source, while `--account-id`
+preserves the broker's identifier for the account; neither value is inferred
+from the portfolio ID. Commands discover the manifest by `kind: Portfolio`, so
 the filename can be changed without changing resource identity. An existing
 directory is accepted only when it contains tracked scaffolding named
 `README.md` or `.gitignore`; any portfolio data or other entry makes creation
 fail before files are written.
+
+Create the opening ledger directly when the balances are already known:
+
+```shell
+mise run py-fund-manager -- \
+  portfolio create playground \
+  --broker historical \
+  --account-id playground \
+  --as-of 2020-01-02T08:00:00-08:00 \
+  --balance=USD:10000,AMAT:22
+```
+
+`--balance` accepts comma-separated `ASSET:VALUE` pairs. The asset matching the
+portfolio base currency is opening cash; every other asset is an opening
+position whose value is its quantity. Assets are normalized to uppercase and
+may appear only once. Inline balances write `transactions.csv` directly and do
+not create a preserved source below `imports/`.
 
 ## Import an opening snapshot
 
@@ -25,9 +47,11 @@ Bootstrap a new portfolio from canonical positions and cash during creation:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio --create etrade-brokerage \
-  import /path/to/private/opening.csv \
-  --as-of 2020-01-02T08:00:00-08:00
+  portfolio create etrade-brokerage \
+  --broker etrade \
+  --account-id brokerage-123 \
+  --as-of 2020-01-02T08:00:00-08:00 \
+  --balance=@/path/to/private/opening.csv
 ```
 
 The CSV uses `amount` for the opening balance and `quantity` for security
@@ -44,8 +68,8 @@ Append confirmed events after the opening boundary:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio etrade-brokerage \
-  import /path/to/private/activity-2020-03.csv
+  portfolio import etrade-brokerage \
+  /path/to/private/activity-2020-03.csv
 ```
 
 Every event carries its own timestamp and stable source identity. Identical events
@@ -64,14 +88,14 @@ Plan a rebalance without adding or removing cash:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio etrade-brokerage rebalance
+  portfolio rebalance etrade-brokerage
 ```
 
 Plan a rebalance after contributing USD 10,000:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio etrade-brokerage rebalance \
+  portfolio rebalance etrade-brokerage \
   --contribute 10000.00
 ```
 
@@ -79,7 +103,7 @@ Plan a USD 5,000 withdrawal and the sales needed to fund it:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio etrade-brokerage rebalance \
+  portfolio rebalance etrade-brokerage \
   --withdraw 5000.00
 ```
 
@@ -92,7 +116,7 @@ timezone offset. The default is the current time:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio etrade-brokerage rebalance \
+  portfolio rebalance etrade-brokerage \
   --as-of 2026-08-26T14:00:00-07:00
 ```
 
@@ -146,7 +170,7 @@ reviewed:
 
 ```shell
 mise run py-fund-manager -- \
-  portfolio etrade-brokerage rebalance > rebalance-plan.json
+  portfolio rebalance etrade-brokerage > rebalance-plan.json
 ```
 
 Execute a reviewed plan against cached historical prices at an explicit time:
