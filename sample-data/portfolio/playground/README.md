@@ -1,10 +1,13 @@
 # Playground Portfolio Regression
 
-Playground is the fictional portfolio scenario protected by
+Playground is the fictional portfolio scenario covered by
 [`tests/playground_test.py`](../../../tests/playground_test.py). It originated as
-the acceptance scenario for deterministic historical broker execution: open an
-account with USD 100,000, invest it in the equal-weight Magnificent Seven
-strategy, process later account activity, and rebalance again.
+the acceptance scenario for deterministic historical broker execution:
+
+- [Open an account with USD 100,000.](../../../tests/playground_test.py#L40-L52)
+- [Invest it in the equal-weight Magnificent Seven strategy.](../../../tests/playground_test.py#L53-L87)
+- [Process later account activity.](../../../tests/playground_test.py#L89-L99)
+- [Rebalance again.](../../../tests/playground_test.py#L101-L132)
 
 This directory contains documentation only. The test creates the portfolio and
 all private-style import files in a temporary data root on every run. Keeping the
@@ -33,19 +36,19 @@ from price-provider behavior.
 
 The regression performs this complete sequence:
 
-1. Create the `playground` Portfolio manifest.
-2. Import the agreed canonical `opening.csv` format.
-3. Load the fictional equal-weight Mag7 strategy.
-4. Generate the first rebalance plan from the opening balance.
-5. Execute all seven orders through `HistoricalBroker`.
-6. Convert and persist those confirmed executions through activity import.
-7. Import the later dividend as a broker activity event.
-8. Reload the ledger and verify that the dividend increased available cash.
-9. Generate and execute a second seven-security rebalance.
-10. Re-derive positions and verify that ending cash matches the plan and remains
-    between zero and one cent.
+- [Create the `playground` Portfolio manifest.](../../../tests/playground_test.py#L40-L42)
+- [Import the agreed canonical `opening.csv` format.](../../../tests/playground_test.py#L43-L52)
+- [Load the fictional equal-weight Mag7 strategy.](../../../tests/playground_test.py#L53-L64)
+- [Generate the first rebalance plan from the opening balance.](../../../tests/playground_test.py#L66-L78)
+- [Execute all seven orders through `HistoricalBroker`.](../../../tests/playground_test.py#L79-L84)
+- [Convert and persist those confirmed executions through activity import.](../../../tests/playground_test.py#L85-L87)
+- [Import the later dividend as a broker activity event.](../../../tests/playground_test.py#L89-L95)
+- [Reload the ledger and verify that the dividend increased available cash.](../../../tests/playground_test.py#L96-L99)
+- [Generate and execute a second seven-security rebalance.](../../../tests/playground_test.py#L101-L116)
+- [Re-derive positions and verify that ending cash matches the plan and remains
+  between zero and one cent.](../../../tests/playground_test.py#L117-L132)
 
-This protects the boundary between opening snapshots, append-only account facts,
+This covers the boundary between opening snapshots, append-only account facts,
 rebalance planning, the generic broker contract, deterministic historical fills,
 and ledger-based state derivation.
 
