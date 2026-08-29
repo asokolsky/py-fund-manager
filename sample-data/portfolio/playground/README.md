@@ -15,9 +15,9 @@ Year's Day market holiday. Starting with cash on that date gives the scenario a
 clear boundary before its first rebalance on January 3. Every later plan,
 simulated fill, and activity event can therefore use the committed timestamps
 and cached 2020 prices instead of the current clock or current market data. The
-The March and June timestamps use Pacific Daylight Time (PDT), with offset
-`-07:00`. This is a reproducible simulation timeline, not a claim that a real
-account was opened in the year 2020.
+The March, June, and September timestamps use Pacific Daylight Time (PDT), with
+offset `-07:00`. This is a reproducible simulation timeline, not a claim that a
+real account was opened in the year 2020.
 
 ## Timeline
 
@@ -36,12 +36,18 @@ Every financial event, plan, and execution uses an explicit Pacific timestamp:
 | 8 | 2020-03-13 14:00 PDT | Plan, execute, and import the dividend rebalance. |
 | 9 | 2020-06-15 09:00 and 14:00 PDT | Import USD 5,000, then plan and execute its rebalance. |
 | 10 | After step 9 | Convert and import fills timestamped 2020-06-15 14:00 PDT. |
+| 11 | 2020-09-01 14:00 PDT | Plan a USD 1,000 withdrawal and generate the required sell orders. |
+| 12 | 2020-09-02 14:00 PDT | Fulfill the sell orders at the next trading day's historical close. |
+| 13 | After step 12 | Convert and import fills timestamped 2020-09-02 14:00 PDT. |
+| 14 | 2020-09-03 09:00 PDT | Record the confirmed USD 1,000 transfer to an outside account. |
 
-Steps 1-6 use PST (`-08:00`). Daylight saving time is in effect for steps 7-10,
+Steps 1-6 use PST (`-08:00`). Daylight saving time is in effect for steps 7-14,
 so those timestamps use PDT (`-07:00`). Planning and execution in steps 8 and 9
 share a timestamp because the historical broker fills at the same eligible close
 used by each plan. Steps 6 and 10 happen after execution, but import fills with
-the execution timestamp rather than the wall-clock import time.
+the execution timestamp rather than the wall-clock import time. Step 12 instead
+uses the next trading day's close to demonstrate that a withdrawal plan can be
+fulfilled after prices move.
 
 ## 0. Reset an earlier Playground run
 
@@ -172,7 +178,7 @@ does not update `transactions.csv` or place orders.
 The regression verifies planning from the historical cache in
 [`playground_test.py`](../../../tests/playground_test.py).
 
-## 5. Fulfill the plan using historical prices
+## 5. Fulfill the rebalancing plan
 
 Submit the complete plan to the historical broker at the 2020-01-03 close:
 
@@ -247,32 +253,36 @@ and imports all seven confirmed fills in
 
 ## 7. Import later account activity
 
-Create an activity file for a USD 70 dividend:
+The following command shows how the dividend activity fixture is generated:
 
 ```shell
 printf '%s\n' \
   'occurred_at,event,asset,amount,external_id' \
   '2020-03-13T09:00:00-07:00,dividend,USD,70.00,playground-dividend-1' \
-  > activity-2020-03-13.csv
+  > tests/data/activity-2020-03-13.csv
 ```
 
-Import it:
+That exact file is already committed as
+[`activity-2020-03-13.csv`](../../../tests/data/activity-2020-03-13.csv), so the
+generation command does not need to be run. Import the committed fixture:
 
 ```shell
-mise run py-fund-manager -- portfolio playground import activity-2020-03-13.csv
+mise run py-fund-manager -- \
+  portfolio playground import tests/data/activity-2020-03-13.csv
 ```
 
-Expected outcome: `activity-2020-03-13.csv` is first created in the current
-directory. Importing it reports one imported activity event, preserves a copy
-at `sample-data/portfolio/playground/imports/activity-2020-03-13.csv`, and
-appends one USD 70 dividend fact to
+Expected outcome: the command imports one event from the committed
+[`activity-2020-03-13.csv`](../../../tests/data/activity-2020-03-13.csv),
+preserves a copy at
+`sample-data/portfolio/playground/imports/activity-2020-03-13.csv`, and appends
+one USD 70 dividend fact to
 `sample-data/portfolio/playground/transactions.csv`. Derived cash increases by
 exactly USD 70; security quantities do not change.
 
 The regression verifies the import and the USD 70 cash increase in
 [`playground_test.py`](../../../tests/playground_test.py).
 
-## 8. Rebalance again
+## 8. Rebalance: Create and Execute the Rebalancing Plan
 
 Generate a second plan from the persisted positions and dividend-adjusted cash:
 
@@ -290,8 +300,7 @@ provenance. Creating the plan does not change the ledger.
 Execute the second plan at the same eligible close:
 
 ```shell
-mise run py-fund-manager -- \
-  broker historical rebalance-plan-2020-03-13.json \
+mise run py-fund-manager -- broker historical rebalance-plan-2020-03-13.json \
   --as-of 2020-03-13T14:00:00-07:00 \
   > executions-2020-03-13.json
 ```
@@ -323,22 +332,30 @@ the resulting positions and cash in
 
 ## 9. Contribute USD 5,000 and rebalance
 
-Record the confirmed contribution at 09:00 PDT on 2020-06-15:
+The following command shows how the contribution activity fixture is generated:
 
 ```shell
 printf '%s\n' \
   'occurred_at,event,asset,amount,external_id' \
   '2020-06-15T09:00:00-07:00,deposit,USD,5000.00,playground-contribution-1' \
-  > activity-2020-06-15.csv
-
-mise run py-fund-manager -- portfolio playground import activity-2020-06-15.csv
+  > tests/data/activity-2020-06-15.csv
 ```
 
-Expected outcome: `activity-2020-06-15.csv` is created in the current directory,
-preserved as `portfolio/playground/imports/activity-2020-06-15.csv`, and appended
-to `portfolio/playground/transactions.csv` as one USD 5,000 deposit. Available
-cash increases by exactly USD 5,000. This uses a confirmed ledger event, not the
-unconfirmed `rebalance --contribute` planning assumption.
+That exact file is already committed as
+[`activity-2020-06-15.csv`](../../../tests/data/activity-2020-06-15.csv), so the
+generation command does not need to be run. Import the committed fixture:
+
+```shell
+mise run py-fund-manager -- \
+  portfolio playground import tests/data/activity-2020-06-15.csv
+```
+
+Expected outcome: the command imports one event from the committed
+[`activity-2020-06-15.csv`](../../../tests/data/activity-2020-06-15.csv),
+preserves it as `portfolio/playground/imports/activity-2020-06-15.csv`, and
+appends one USD 5,000 deposit to `portfolio/playground/transactions.csv`.
+Available cash increases by exactly USD 5,000. This uses a confirmed ledger
+event, not the unconfirmed `rebalance --contribute` planning assumption.
 
 Generate the contribution rebalance at the 2020-06-15 close:
 
@@ -393,6 +410,96 @@ one cent.
 The regression imports the USD 5,000 contribution, verifies the exact cash
 increase, generates and executes the third plan without changing the ledger,
 then imports all seven fills and checks the final positions and residual cash in
+[`playground_test.py`](../../../tests/playground_test.py).
+
+## 11. Plan a USD 1,000 withdrawal
+
+Generate a plan that reserves USD 1,000 for transfer out of the portfolio:
+
+```shell
+mise run py-fund-manager -- \
+  portfolio playground rebalance \
+  --as-of 2020-09-01T14:00:00-07:00 \
+  --withdraw 1000.00 \
+  > rebalance-plan-2020-09-01.json
+```
+
+Expected outcome: `rebalance-plan-2020-09-01.json` is created in the current
+directory. Its valuation records a USD 1,000 planned withdrawal, reduces the
+target portfolio value by that amount, and contains sell orders that raise the
+reserved cash while keeping the remaining holdings aligned with `mag7`.
+Planning neither changes the ledger nor moves money.
+
+## 12. Fulfill the withdrawal orders the next day
+
+Execute the reviewed plan at the next trading day's historical close:
+
+```shell
+mise run py-fund-manager -- \
+  broker historical rebalance-plan-2020-09-01.json \
+  --as-of 2020-09-02T14:00:00-07:00 \
+  > executions-2020-09-02.json
+```
+
+Expected outcome: `executions-2020-09-02.json` is created in the current
+directory with complete sell fills priced from the 2020-09-02 historical close.
+The broker rejects the execution if those actual fills would leave less than USD
+1,000 cash for the planned withdrawal. Successful execution prints confirmed
+fills but does not modify `portfolio/playground/transactions.csv`.
+
+## 13. Import the withdrawal-funding executions
+
+Convert the confirmed fills and import them into the portfolio ledger:
+
+```shell
+jq -r '
+  (
+    ["occurred_at", "event", "asset", "quantity", "price", "fees", "external_id"],
+    (.[] | [.executed_at, .side, .ticker, .quantity, .price, (.fees // "0"), .id])
+  ) |
+  @csv
+' executions-2020-09-02.json > rebalance-2020-09-02.csv
+
+mise run py-fund-manager -- portfolio playground import rebalance-2020-09-02.csv
+```
+
+Expected outcome: `rebalance-2020-09-02.csv` is created in the current directory,
+preserved as `portfolio/playground/imports/rebalance-2020-09-02.csv`, and its
+confirmed sells are appended to `portfolio/playground/transactions.csv`. Derived
+cash is now at least USD 1,000, but no withdrawal has occurred yet.
+
+## 14. Transfer USD 1,000 to an outside account
+
+The following command shows how the withdrawal activity fixture is generated:
+
+```shell
+printf '%s\n' \
+  'occurred_at,event,asset,amount,external_id' \
+  '2020-09-03T09:00:00-07:00,withdrawal,USD,1000.00,playground-outside-account-1' \
+  > tests/data/activity-2020-09-03.csv
+```
+
+That exact file is already committed as
+[`activity-2020-09-03.csv`](../../../tests/data/activity-2020-09-03.csv), so the
+generation command does not need to be run. Import the committed fixture:
+
+```shell
+mise run py-fund-manager -- \
+  portfolio playground import tests/data/activity-2020-09-03.csv
+```
+
+Expected outcome: the command imports one event from the committed
+[`activity-2020-09-03.csv`](../../../tests/data/activity-2020-09-03.csv),
+preserves it as `portfolio/playground/imports/activity-2020-09-03.csv`, and
+appends one confirmed USD 1,000 withdrawal to
+`portfolio/playground/transactions.csv`. Portfolio cash decreases by exactly USD
+1,000 without changing security quantities. The outside account is represented
+by the external transaction ID; its own balance is outside this portfolio's
+ledger.
+
+The regression generates the withdrawal plan, fulfills it from the next day's
+prices, verifies the execution reserves at least USD 1,000, imports the fills,
+then imports the withdrawal and verifies the exact cash movement in
 [`playground_test.py`](../../../tests/playground_test.py).
 
 ## Run the regression coverage

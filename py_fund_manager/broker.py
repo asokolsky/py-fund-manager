@@ -64,8 +64,12 @@ def execute_rebalance_plan(
     final_positions, final_cash = derive_portfolio_state(
         portfolio, candidate, final_time
     )
-    if final_cash < 0:
-        msg = f'broker executions derive negative cash: {final_cash}'
+    required_cash = plan.valuation.withdrawal
+    if final_cash < required_cash:
+        msg = (
+            'broker executions leave insufficient cash for the planned withdrawal: '
+            f'{final_cash} < {required_cash}'
+        )
         raise ValueError(msg)
     _validate_expected_positions(positions, executions, final_positions)
     return RebalanceExecutionResult(orders, tuple(executions), tuple(facts))
@@ -113,10 +117,10 @@ def _validate_plan_inputs(
             f'portfolio uses {portfolio.spec.base_currency}'
         )
         raise ValueError(msg)
-    if plan.valuation.contribution or plan.valuation.withdrawal:
+    if plan.valuation.contribution:
         msg = (
-            'cash-flow assumptions cannot be executed; confirm the deposit or '
-            'withdrawal in the ledger and generate a new plan'
+            'contribution assumptions cannot be executed; confirm the deposit '
+            'in the ledger and generate a new plan'
         )
         raise ValueError(msg)
     positions, available_cash = derive_portfolio_state(

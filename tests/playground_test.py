@@ -26,6 +26,7 @@ from py_fund_manager.rebalance import (
     plan_rebalance,
 )
 from py_fund_manager.schemas import (
+    OrderSide,
     StrategyAssignment,
     StrategyRevisionReference,
     Transaction,
@@ -41,14 +42,17 @@ SECOND_EXECUTION_AT = SECOND_PLAN_AT
 CONTRIBUTION_AT = datetime(2020, 6, 15, 16, tzinfo=UTC)
 THIRD_PLAN_AT = datetime(2020, 6, 15, 21, tzinfo=UTC)
 THIRD_EXECUTION_AT = THIRD_PLAN_AT
+WITHDRAWAL_PLAN_AT = datetime(2020, 9, 1, 21, tzinfo=UTC)
+WITHDRAWAL_EXECUTION_AT = datetime(2020, 9, 2, 21, tzinfo=UTC)
+WITHDRAWAL_AT = datetime(2020, 9, 3, 16, tzinfo=UTC)
 STRATEGY_PATH = Path(__file__).parents[1] / 'sample-data/strategy/mag7/strategy.yaml'
 
 
 class TestPlayground(unittest.TestCase):
     """Cover the complete cash-funded Mag7 Playground workflow."""
 
-    def test_open_rebalance_dividend_contribution_and_rebalance(self) -> None:
-        """Replay three rebalances around a dividend and cash contribution."""
+    def test_complete_historical_cash_flow_workflow(self) -> None:
+        """Replay rebalances around a dividend, contribution, and withdrawal."""
         strategy = load_strategy(STRATEGY_PATH)
         tickers = set(strategy.target_weights)
         with tempfile.TemporaryDirectory() as directory:
@@ -101,12 +105,7 @@ class TestPlayground(unittest.TestCase):
                 portfolio, after_first, DIVIDEND_AT
             )
 
-            dividend_file = root / 'activity-2020-03-13.csv'
-            dividend_file.write_text(
-                'occurred_at,event,asset,amount,external_id\n'
-                f'{DIVIDEND_AT.isoformat()},dividend,USD,70.00,playground-dividend-1\n',
-                encoding='utf-8',
-            )
+            dividend_file = Path(__file__).parent / 'data/activity-2020-03-13.csv'
             dividend_import = import_activity(portfolio_directory, dividend_file)
             before_second = load_transactions(portfolio_directory / 'transactions.csv')
             positions_before, cash_before = derive_portfolio_state(
@@ -141,13 +140,7 @@ class TestPlayground(unittest.TestCase):
                 portfolio, after_second, CONTRIBUTION_AT
             )
 
-            contribution_file = root / 'activity-2020-06-15.csv'
-            contribution_file.write_text(
-                'occurred_at,event,asset,amount,external_id\n'
-                f'{CONTRIBUTION_AT.isoformat()},deposit,USD,5000.00,'
-                'playground-contribution-1\n',
-                encoding='utf-8',
-            )
+            contribution_file = Path(__file__).parent / 'data/activity-2020-06-15.csv'
             contribution_import = import_activity(
                 portfolio_directory, contribution_file
             )
@@ -189,6 +182,51 @@ class TestPlayground(unittest.TestCase):
                 portfolio, final_transactions, THIRD_EXECUTION_AT
             )
 
+            withdrawal_prices = load_latest_daily_prices(
+                tickers, WITHDRAWAL_PLAN_AT, 'USD', price_history
+            )
+            withdrawal_plan = plan_rebalance(
+                portfolio,
+                final_transactions,
+                assignment,
+                strategy,
+                withdrawal_prices,
+                as_of=WITHDRAWAL_PLAN_AT,
+                withdrawal=Decimal(1000),
+                generated_at=WITHDRAWAL_PLAN_AT,
+            )
+            withdrawal_result = execute_rebalance_plan(
+                HistoricalBroker(WITHDRAWAL_EXECUTION_AT, price_history),
+                portfolio,
+                final_transactions,
+                withdrawal_plan,
+            )
+            ledger_after_withdrawal_execution = load_transactions(
+                portfolio_directory / 'transactions.csv'
+            )
+            withdrawal_executions_file = root / 'rebalance-2020-09-02.csv'
+            self._write_executions(
+                withdrawal_executions_file, withdrawal_result.transactions
+            )
+            withdrawal_execution_import = import_activity(
+                portfolio_directory, withdrawal_executions_file
+            )
+            before_withdrawal = load_transactions(
+                portfolio_directory / 'transactions.csv'
+            )
+            positions_before_withdrawal, cash_before_withdrawal = (
+                derive_portfolio_state(portfolio, before_withdrawal, WITHDRAWAL_AT)
+            )
+
+            withdrawal_file = Path(__file__).parent / 'data/activity-2020-09-03.csv'
+            withdrawal_import = import_activity(portfolio_directory, withdrawal_file)
+            after_withdrawal = load_transactions(
+                portfolio_directory / 'transactions.csv'
+            )
+            positions_after_withdrawal, cash_after_withdrawal = derive_portfolio_state(
+                portfolio, after_withdrawal, WITHDRAWAL_AT
+            )
+
             preserved_imports = {
                 path.name for path in (portfolio_directory / 'imports').iterdir()
             }
@@ -228,11 +266,30 @@ class TestPlayground(unittest.TestCase):
                 'rebalance-2020-03-13.csv',
                 'activity-2020-06-15.csv',
                 'rebalance-2020-06-15.csv',
+                'rebalance-2020-09-02.csv',
+                'activity-2020-09-03.csv',
             },
         )
         self.assertEqual(set(final_positions), set(strategy.target_weights))
         self.assertGreaterEqual(final_cash, Decimal(0))
         self.assertLess(final_cash, Decimal('0.01'))
+        self.assertEqual(withdrawal_plan.valuation.withdrawal, Decimal('1000.00'))
+        self.assertTrue(withdrawal_plan.orders)
+        self.assertTrue(
+            all(order.side == OrderSide.SELL for order in withdrawal_plan.orders)
+        )
+        self.assertEqual(
+            ledger_after_withdrawal_execution,
+            final_transactions,
+        )
+        self.assertEqual(
+            withdrawal_execution_import.imported,
+            len(withdrawal_result.executions),
+        )
+        self.assertGreaterEqual(cash_before_withdrawal, Decimal(1000))
+        self.assertEqual(withdrawal_import.imported, 1)
+        self.assertEqual(positions_after_withdrawal, positions_before_withdrawal)
+        self.assertEqual(cash_after_withdrawal, cash_before_withdrawal - Decimal(1000))
 
     @staticmethod
     def _write_price_history(directory: Path, tickers: set[str]) -> None:
@@ -242,8 +299,10 @@ class TestPlayground(unittest.TestCase):
             date(2020, 1, 3),
             date(2020, 3, 13),
             date(2020, 6, 15),
+            date(2020, 9, 1),
+            date(2020, 9, 2),
         ]
-        closes = [100.0, 99.0, 110.0, 120.0]
+        closes = [100.0, 99.0, 110.0, 120.0, 130.0, 131.0]
         for ticker in tickers:
             path = (
                 directory

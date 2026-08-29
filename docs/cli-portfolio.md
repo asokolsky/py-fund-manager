@@ -165,9 +165,12 @@ nonnegative resulting cash, and resulting positions. Confirmed executions are
 written as JSON but are not appended automatically; convert them to the canonical
 activity CSV and import that file after review.
 
-Plans containing `--contribute` or `--withdraw` cannot be executed. Those values
-are unconfirmed planning assumptions; record the completed cash movement in the
-ledger and generate a new plan first.
+Plans containing `--contribute` cannot be executed because they assume cash that
+is not yet in the ledger. Record the completed deposit and generate a new plan.
+A plan containing `--withdraw` can be executed: its sell orders raise the
+reserved cash, and execution fails unless the confirmed fills leave at least the
+planned withdrawal amount available. Import those fills before recording the
+confirmed withdrawal in the ledger.
 
 Under the documented strict rebalance policy, strategy positions missing from the
 portfolio generate buys, while portfolio positions absent from the strategy have a
