@@ -180,7 +180,7 @@ The rebalance command emits a validated JSON document to standard output:
 
 ```json
 {
-  "schema_version": 3,
+  "schema_version": 1,
   "portfolio_id": "brokerage",
   "strategy_assignment_id": "assignment-example",
   "strategy": {
@@ -230,7 +230,7 @@ are `underweight`, `overweight`, or `not_in_strategy`. The plan identifies the
 effective assignment and immutable revision. It is neither a broker order nor an
 execution report and is never written to the transaction ledger.
 
-Version `3` requires confirmed ledger cash rather than a contribution assumption,
+Version `1` requires confirmed ledger cash rather than a contribution assumption,
 plus exact execution arithmetic, price availability, and source provenance. Each
 estimated notional equals rounded quantity multiplied by estimated price. Summary
 amounts reconcile to the order notionals, preserving residual cash from

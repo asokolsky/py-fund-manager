@@ -491,7 +491,7 @@ class TestCLI(unittest.TestCase):
         ]
         data_directory = cli.Path('test-data')
         plan = Mock()
-        plan.model_dump_json.return_value = '{"schema_version":3}'
+        plan.model_dump_json.return_value = '{"schema_version":1}'
         with (
             patch.object(sys, 'argv', arguments),
             patch.object(cli, 'data_directory', return_value=data_directory),

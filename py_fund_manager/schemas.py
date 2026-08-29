@@ -504,7 +504,7 @@ class RebalancePlan(BaseModel):
 
     model_config = ConfigDict(extra='forbid', frozen=True)
 
-    schema_version: Literal[3] = 3
+    schema_version: Literal[1] = 1
     portfolio_id: str = Field(min_length=1)
     strategy_assignment_id: str = Field(min_length=1)
     strategy: StrategyRevisionReference

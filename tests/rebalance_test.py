@@ -207,7 +207,7 @@ class TestRebalance(unittest.TestCase):
         )
 
         order = plan.orders[0]
-        self.assertEqual(plan.schema_version, 3)
+        self.assertEqual(plan.schema_version, 1)
         self.assertEqual(order.quantity, Decimal('33.333333'))
         self.assertEqual(
             order.estimated_notional, order.quantity * order.estimated_price
