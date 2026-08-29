@@ -85,6 +85,11 @@ The command uses the strategy assignment effective at the planning time, derived
 holdings and cash, and cached daily closing prices to produce a broker-neutral JSON
 order plan.
 
+Rebalancing treats existing portfolio cash as investable. It generates buy
+orders that move cash into underweight strategy positions, leaving only any
+residual caused by quantity rounding. Planning does not execute those orders or
+modify the transaction ledger.
+
 Plan a rebalance without adding or removing cash:
 
 ```shell
