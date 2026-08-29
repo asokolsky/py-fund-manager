@@ -1,14 +1,15 @@
 # Portfolio Storage and Validation
 
-This document is the authoritative storage contract and schema reference for
-portfolio data. Rationale belongs in [Design Decisions](design-decisions.md), and
-unimplemented work belongs in [Planned Work](todo.md).
+This document is the authoritative storage and validation reference for portfolio
+data. Validated shapes belong in [Schemas](schemas.md), input formats belong in
+[Import Files](import-files.md), rationale belongs in
+[Design Decisions](design-decisions.md), and unimplemented work belongs in
+[Planned Work](todo.md).
 
 ## Conceptual model
 
-[Concepts](concepts.md) is the sole definition of the domain abstractions and their
-relationships. This contract assumes those terms and specifies their directories,
-file formats, schemas, and validation behavior.
+[Concepts](concepts.md) defines the domain abstractions and their relationships.
+This contract specifies their directories, file formats, and validation behavior.
 
 ## Directories and data roots
 
@@ -23,7 +24,7 @@ DATA_ROOT/
 │       ├── allocation-history.yaml
 │       ├── transactions.csv
 │       └── imports/
-│           └── stocks.csv
+│           └── opening.csv
 └── strategy/
     └── mag7/
         ├── current.yaml
@@ -49,15 +50,15 @@ PersonalProjects/
     │       ├── allocation-history.yaml
     │       ├── transactions.csv
     │       └── imports/
-    │           └── stocks.csv
+    │           └── opening.csv
     └── strategy/
 ```
 
 Each user can configure the private checkout wherever appropriate without
-recording its location in this repo.
+recording its location in this repo. The CLI creates `portfolio/` below the
+selected root. Strategy commands use the `strategy/` hierarchy and portfolio
+strategy history.
 
-The CLI creates `portfolio/` below the selected root. Strategy commands use the
-`strategy/` hierarchy and portfolio strategy history.
 The generated
 [`sample-data/strategy/SnP500-direct/`](../sample-data/strategy/SnP500-direct/README.md)
 strategy is documented separately.
@@ -70,139 +71,16 @@ exactly one current `Strategy`. Immutable files below `revisions/` are excluded
 from current-resource discovery. Canonical files contain exactly one manifest;
 multi-document YAML streams are rejected.
 
-## Portfolio schema
+## Data contracts
 
-A `Portfolio` manifest contains identity, presentation metadata, and account
-configuration:
-
-```yaml
-apiVersion: v1
-kind: Portfolio
-metadata:
-  name: etrade-roth-ira
-  display_name: E*TRADE Roth IRA
-spec:
-  broker: etrade
-  account_id: etrade-roth-ira
-  base_currency: USD
-```
-
-The current creation command derives `broker` from the first segment of the
-portfolio ID and uses the ID for both metadata names and the local `account_id`. These are
-safe bootstrap defaults, not claims about the broker's displayed account name or
-account number. Account-opening state belongs in the transaction opening boundary,
-not in the Portfolio specification.
-
-Strategy selection does not belong in the Portfolio manifest. StrategyHistory is
-its sole authority.
-
-Portfolio IDs use lowercase kebab-case. Currency is normalized to a three-character
-uppercase code. Unknown fields, legacy `schema_version`, and any `apiVersion`
-other than the string `v1` are rejected. `metadata.name` must equal the containing
-portfolio directory name.
-
-Resource names begin with an ASCII letter or digit and may then contain ASCII
-letters, digits, periods, underscores, and hyphens. Path separators and relative
-path components are rejected. Portfolio creation applies the narrower lowercase
-kebab-case convention; existing mixed-case Strategy identities such as
-`SnP500-direct` remain valid.
-
-## Holdings import schema
-
-The canonical `stocks.csv` input requires `ticker` and `quantity`:
-
-```csv
-ticker,quantity,cost_basis,currency,external_id
-AAPL,12,2100.00,USD,broker-position-1
-MSFT,5,,USD,broker-position-2
-```
-
-`cost_basis`, `currency`, and `external_id` are optional. Currency defaults to
-`USD`. The importer normalizes tickers and currency to uppercase and requires:
-
-- At least one position.
-- One row per ticker.
-- A valid ticker and positive quantity for every row.
-- Nonnegative cost basis when supplied.
-
-The source is copied to `imports/` under its original basename. Existing source
-copies and existing `transactions.csv` files are never replaced. Broker-native CSV
-formats require an adapter into this canonical schema; no E*TRADE-specific adapter
-exists yet.
-
-## Transaction schema
-
-The importer writes `transactions.csv`:
-
-```csv
-id,occurred_at,type,ticker,quantity,price,amount,cost_basis,currency,fees,external_id
-opening-000001,2026-08-26T12:00:00+00:00,opening_position,AAPL,12,,,2100.00,USD,,broker-position-1
-```
-
-`occurred_at` is the UTC time at which the import runs. The current CLI has no
-broker-statement `as_of` option. Generated IDs are sequential within the opening
-import. When `external_id` is absent, the importer derives it from the source
-basename and line number.
-
-The model recognizes these transaction types:
-
-- `opening_position` and `opening_cash`
-- `position_adjustment`
-- `buy` and `sell`
-- `dividend`, `interest`, and `fee`
-- `deposit` and `withdrawal`
-- `split`
-- `transfer_in` and `transfer_out`
-
-Recognition means such rows can be parsed and validated; only `opening_position`
-rows are generated by the current CLI. Position-changing security events require
-a ticker and quantity. Timestamps must include a UTC offset. Prices, amounts,
-cost basis, and fees cannot be negative.
-
-Duplicate transaction IDs are rejected when loading a ledger. Ledger-wide
-deduplication by `external_id` and chronological-order validation are not yet
-implemented.
-
-Rebalance state derivation treats `opening_position`, `buy`, and `transfer_in` as
-position increases; `sell` and `transfer_out` as decreases; and
-`position_adjustment` as a signed change. Cash events require `amount`. Trade cash
-uses `amount` when present or `price × quantity` otherwise, and fees reduce cash.
-Split derivation and non-base-currency transactions are rejected until their
-accounting rules are implemented.
-
-## Strategy schema
-
-A `Strategy` manifest has this validated shape:
-
-```yaml
-apiVersion: v1
-kind: Strategy
-metadata:
-  name: mag7
-  display_name: Magnificent Seven equal weight
-spec:
-  allocation:
-    type: target_weights
-    positions:
-      AAPL: "0.142857"
-      AMZN: "0.142857"
-      GOOGL: "0.142857"
-      META: "0.142857"
-      MSFT: "0.142857"
-      NVDA: "0.142857"
-      TSLA: "0.142858"
-```
-
-Strategy tickers are normalized to uppercase. Positions must be nonempty, weights
-must be nonnegative, and the validated total must equal `1.0` within the documented
-tolerance.
-`metadata.name` must equal the containing strategy directory name.
+[Schemas](schemas.md) defines the canonical Portfolio, Transaction, Strategy,
+StrategyHistory, and rebalance-plan shapes. [Import Files](import-files.md)
+defines every accepted input format and its preservation behavior.
 
 ## Strategy revision storage
 
 A strategy ID may have multiple immutable revisions as its constituents or weights
-change. The layout stores content-addressed snapshots beside the editable
-strategy definition:
+change:
 
 ```text
 strategy/SnP500-direct/
@@ -211,122 +89,16 @@ strategy/SnP500-direct/
     └── sha256-<64-lowercase-hex-digits>.yaml
 ```
 
-The revision is the SHA-256 digest of the canonical validated strategy content,
-not of incidental YAML formatting. Canonicalization serializes the complete
-Pydantic model in JSON mode with aliases, explicit null values, lexicographically
-sorted object keys, compact separators, UTF-8 encoding, and no trailing newline.
-Decimal values therefore remain JSON strings. Creating an assignment snapshots
-that content if the revision is not already present. A revision file is never
-replaced. This makes historical assignments reproducible after `strategy.yaml`
-changes.
+The revision is the SHA-256 digest of canonical validated strategy content, not
+incidental YAML formatting. Canonicalization serializes the complete model in JSON
+mode with aliases, explicit null values, sorted object keys, compact separators,
+UTF-8 encoding, and no trailing newline. Decimal values remain JSON strings.
 
-## Strategy history schema
-
-A `StrategyHistory` manifest records the portfolio's effective-dated strategy
-assignments. Its `metadata.name` must equal the containing portfolio directory:
-
-```yaml
-apiVersion: v1
-kind: StrategyHistory
-metadata:
-  name: etrade-roth-ira
-spec:
-  assignments:
-    - id: initial-strategy
-      effective_at: 2026-01-01T00:00:00Z
-      strategy:
-        name: mag7
-        revision: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-      reason: Initial portfolio strategy
-    - id: adopt-sp500-direct
-      effective_at: 2026-08-26T12:00:00Z
-      strategy:
-        name: SnP500-direct
-        revision: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-      reason: Move to direct S&P 500 replication
-```
-
-The persisted revision value uses `sha256:` followed by 64 lowercase hexadecimal
-digits. Assignment IDs must be unique and nonempty. Effective times must include a
-UTC offset, appear in strictly increasing chronological order, and cannot be
-shared by multiple assignments. Reasons are optional nonempty text.
-
-Each strategy name and revision must resolve to validated immutable strategy content.
-Existing assignments cannot be edited or removed through normal commands. The
-application adds an assignment by validating the entire existing document,
-appending one entry, and atomically replacing the YAML file. Append-only is a
-domain rule; it does not require byte-wise file appends.
-
-For a requested time, the active assignment is the last assignment whose
-`effective_at` is not later than that time. Rebalancing fails if there is no such
-assignment, the referenced strategy or revision is unavailable, or the history is
-ambiguous. Recording a new assignment neither rebalances the portfolio nor writes
-financial transactions.
-
-## Rebalance plan schema
-
-The rebalance command emits a validated JSON document to standard output:
-
-```json
-{
-  "schema_version": 2,
-  "portfolio_id": "etrade-brokerage",
-  "strategy_assignment_id": "assignment-example",
-  "strategy": {
-    "id": "SnP500-direct",
-    "revision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  },
-  "generated_at": "2026-08-26T21:00:01Z",
-  "valuation": {
-    "as_of": "2026-08-26T21:00:00Z",
-    "currency": "USD",
-    "holdings_value": "95000.00",
-    "available_cash": "5000.00",
-    "contribution": "10000.00",
-    "withdrawal": "0.00",
-    "target_portfolio_value": "110000.00"
-  },
-  "orders": [
-    {
-      "ticker": "AAPL",
-      "side": "buy",
-      "current_quantity": "10",
-      "current_value": "2200.00",
-      "target_weight": "0.061234567890",
-      "target_value": "6735.80",
-      "estimated_price": "220.00",
-      "price_as_of": "2026-08-26",
-      "price_available_at": "2026-08-26T16:00:00-04:00",
-      "price_source": "Yahoo Finance via yfinance",
-      "price_source_partition": "interval=1d/ticker=AAPL/year=2026/data.parquet",
-      "quantity": "20.617272",
-      "estimated_notional": "4535.799840",
-      "reason": "underweight"
-    }
-  ],
-  "summary": {
-    "buy_orders": 1,
-    "sell_orders": 0,
-    "estimated_buys": "4535.799840",
-    "estimated_sells": "0.00",
-    "estimated_ending_cash": "10464.200160"
-  },
-  "warnings": []
-}
-```
-
-Decimal values serialize as JSON strings. Order sides are `buy` or `sell`; reasons
-are `underweight`, `overweight`, or `not_in_strategy`. The plan identifies the
-exact effective strategy assignment and immutable revision. It is not a broker
-order or an execution report and is never written to the transaction ledger.
-Rebalance plan schema version `2` requires exact execution arithmetic and price
-availability and source-provenance fields; consumers must reject unsupported plan
-versions.
-Each order carries the availability time, provider, and relative Parquet source
-partition for its price. Its estimated notional equals its rounded quantity times
-its estimated price exactly. Summary amounts reconcile to those order notionals,
-so `estimated_ending_cash` retains residual cash from fractional-quantity
-rounding.
+Creating an assignment snapshots that content if the revision is not already
+present. A revision file is never replaced. Existing assignments cannot be edited
+or removed through normal commands. A new assignment is appended after validating
+the full history, and the YAML file is replaced atomically. Recording an
+assignment neither rebalances the portfolio nor writes financial transactions.
 
 ## CLI usage
 

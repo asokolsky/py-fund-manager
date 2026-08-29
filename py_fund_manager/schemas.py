@@ -128,8 +128,8 @@ class Transaction(BaseModel):
         return value
 
     @model_validator(mode='after')
-    def validate_security_event(self) -> Self:
-        """Require security identity and quantity for position-changing facts."""
+    def validate_transaction_shape(self) -> Self:
+        """Require the fields needed to derive each supported ledger fact."""
         security_events = {
             TransactionType.OPENING_POSITION,
             TransactionType.POSITION_ADJUSTMENT,
@@ -149,6 +149,33 @@ class Transaction(BaseModel):
             self.quantity is not None and self.quantity <= 0
         ):
             msg = f'{self.type} quantity must be positive'
+            raise ValueError(msg)
+        cash_events = {
+            TransactionType.OPENING_CASH,
+            TransactionType.DEPOSIT,
+            TransactionType.WITHDRAWAL,
+            TransactionType.DIVIDEND,
+            TransactionType.INTEREST,
+            TransactionType.FEE,
+        }
+        if self.type in cash_events and self.amount is None:
+            msg = f'{self.type} requires amount'
+            raise ValueError(msg)
+        if self.type in {TransactionType.BUY, TransactionType.SELL} and (
+            self.amount is None and self.price is None
+        ):
+            msg = f'{self.type} requires amount or price'
+            raise ValueError(msg)
+        if self.type == TransactionType.OPENING_CASH and any(
+            value is not None
+            for value in (self.ticker, self.quantity, self.price, self.cost_basis)
+        ):
+            msg = 'opening_cash accepts only amount, currency, and identity fields'
+            raise ValueError(msg)
+        if self.type == TransactionType.OPENING_POSITION and any(
+            value is not None for value in (self.price, self.amount)
+        ):
+            msg = 'opening_position does not accept price or amount'
             raise ValueError(msg)
         return self
 
@@ -287,7 +314,7 @@ class PriceObservation(BaseModel):
 
     model_config = ConfigDict(extra='forbid', frozen=True, str_strip_whitespace=True)
 
-    ticker: str = Field(min_length=1)
+    ticker: str = Field(min_length=1, pattern=TICKER_PATTERN)
     as_of: date
     available_at: datetime
     price: Decimal = Field(gt=0)
@@ -326,6 +353,65 @@ class OrderReason(StrEnum):
     UNDERWEIGHT = 'underweight'
     OVERWEIGHT = 'overweight'
     NOT_IN_STRATEGY = 'not_in_strategy'
+
+
+class BrokerOrder(BaseModel):
+    """Transport-neutral order submitted to a broker adapter."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True, str_strip_whitespace=True)
+
+    id: str = Field(min_length=1)
+    ticker: str = Field(min_length=1, pattern=TICKER_PATTERN)
+    side: OrderSide
+    quantity: Decimal = Field(gt=0)
+    currency: str = Field(min_length=3, max_length=3)
+    submitted_at: datetime
+
+    @field_validator('ticker', 'currency', mode='before')
+    @classmethod
+    def normalize_order_code(cls, value: object) -> object:
+        """Normalize order ticker and currency codes."""
+        return value.strip().upper() if isinstance(value, str) else value
+
+    @field_validator('submitted_at')
+    @classmethod
+    def validate_submitted_at(cls, value: datetime) -> datetime:
+        """Require an unambiguous order submission time."""
+        if value.tzinfo is None:
+            msg = 'order submitted_at must include a UTC offset'
+            raise ValueError(msg)
+        return value
+
+
+class Execution(BaseModel):
+    """One confirmed full or partial fill returned by a broker adapter."""
+
+    model_config = ConfigDict(extra='forbid', frozen=True, str_strip_whitespace=True)
+
+    id: str = Field(min_length=1)
+    order_id: str = Field(min_length=1)
+    ticker: str = Field(min_length=1, pattern=TICKER_PATTERN)
+    side: OrderSide
+    quantity: Decimal = Field(gt=0)
+    price: Decimal = Field(gt=0)
+    fees: Decimal = Field(default=Decimal(0), ge=0)
+    currency: str = Field(min_length=3, max_length=3)
+    executed_at: datetime
+
+    @field_validator('ticker', 'currency', mode='before')
+    @classmethod
+    def normalize_execution_code(cls, value: object) -> object:
+        """Normalize execution ticker and currency codes."""
+        return value.strip().upper() if isinstance(value, str) else value
+
+    @field_validator('executed_at')
+    @classmethod
+    def validate_executed_at(cls, value: datetime) -> datetime:
+        """Require an unambiguous execution time."""
+        if value.tzinfo is None:
+            msg = 'execution executed_at must include a UTC offset'
+            raise ValueError(msg)
+        return value
 
 
 class RebalanceOrder(BaseModel):

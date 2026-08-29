@@ -1,3 +1,3 @@
 id,occurred_at,type,ticker,quantity,price,amount,cost_basis,currency,fees,external_id
-opening-000001,2026-01-01T12:00:00+00:00,opening_position,AAPL,2,,,300.00,USD,,sample:AAPL
-opening-000002,2026-01-01T12:00:00+00:00,opening_position,MSFT,1,,,250.00,USD,,sample:MSFT
+opening-000001,2026-01-01T12:00:00+00:00,opening_position,AAPL,2,,,300.00,USD,,
+opening-000002,2026-01-01T12:00:00+00:00,opening_position,MSFT,1,,,250.00,USD,,

@@ -19,7 +19,12 @@ from . import __version__
 from .config import ConfigurationError, configured_data_root
 from .download import Interval, download, inclusive_year_range, tickers_argument
 from .log import setup_logging
-from .portfolio import create_portfolio, find_manifest, import_opening_positions
+from .portfolio import (
+    create_portfolio,
+    find_manifest,
+    import_activity,
+    import_opening_snapshot,
+)
 from .rebalance import rebalance_portfolio
 from .strategy import (
     assign_strategy,
@@ -36,7 +41,8 @@ epilog = """Examples:
     python -m py_fund_manager -v download 2024-2025 --tickers=AAPL,MSFT
     python -m py_fund_manager download 2020 --tickers=@tickers.txt --interval=1w
     python -m py_fund_manager portfolio --create etrade-brokerage
-    python -m py_fund_manager portfolio --create etrade-brokerage import-stocks stocks.csv
+    python -m py_fund_manager portfolio --create etrade-brokerage import opening.csv
+    python -m py_fund_manager portfolio etrade-brokerage import activity.csv
     python -m py_fund_manager portfolio etrade-brokerage strategy show
 """
 
@@ -113,7 +119,7 @@ def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuse
     portfolio_parser.add_argument(
         'portfolio_arguments',
         nargs=REMAINDER,
-        help='import-stocks or strategy operation and its arguments',
+        help='import or strategy operation and its arguments',
     )
 
     args = parser.parse_args()
@@ -150,19 +156,29 @@ def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuse
                 portfolio_directory = create_portfolio(directory, args.create)
                 print(f'Created portfolio {args.create} in {portfolio_directory}')
                 if action is not None:
-                    imported = import_opening_positions(
-                        portfolio_directory, action.stocks_file
+                    imported = import_opening_snapshot(
+                        portfolio_directory,
+                        action.source_file,
+                        occurred_at=action.as_of,
                     )
                     print(
-                        f'Imported {imported} opening positions from {action.stocks_file}'
+                        f'Imported {imported} opening facts from {action.source_file}'
                     )
             elif args.portfolio_id is not None:
                 action = _parse_portfolio_action(args.portfolio_arguments)
-                if action.portfolio_command == 'strategy':
-                    result = _strategy_command(directory, args.portfolio_id, action)
-                else:
-                    result = _rebalance_command(directory, args.portfolio_id, action)
-                return result
+                if action.portfolio_command == 'import':
+                    import_result = import_activity(
+                        directory / 'portfolio' / args.portfolio_id,
+                        action.source_file,
+                    )
+                    print(
+                        f'Imported {import_result.imported} activity events from '
+                        f'{action.source_file}; skipped {import_result.skipped}'
+                    )
+                    return 0
+                elif action.portfolio_command == 'strategy':
+                    return _strategy_command(directory, args.portfolio_id, action)
+                return _rebalance_command(directory, args.portfolio_id, action)
             else:
                 portfolio_parser.error(
                     '--create PORTFOLIO_ID or an existing portfolio ID is required'
@@ -206,8 +222,9 @@ def _parse_create_action(arguments: list[str]) -> Namespace:
     """Parse an optional action performed immediately after portfolio creation."""
     parser = ArgumentParser(prog=f'{CLI_NAME} portfolio --create PORTFOLIO_ID')
     commands = parser.add_subparsers(dest='command', required=True)
-    import_parser = commands.add_parser('import-stocks')
-    import_parser.add_argument('stocks_file', type=Path)
+    import_parser = commands.add_parser('import')
+    import_parser.add_argument('source_file', type=Path)
+    import_parser.add_argument('--as-of', type=effective_time)
     return parser.parse_args(arguments)
 
 
@@ -215,6 +232,8 @@ def _parse_portfolio_action(arguments: list[str]) -> Namespace:
     """Parse an operation for an existing portfolio."""
     parser = ArgumentParser(prog=f'{CLI_NAME} portfolio PORTFOLIO_ID')
     commands = parser.add_subparsers(dest='portfolio_command', required=True)
+    import_parser = commands.add_parser('import')
+    import_parser.add_argument('source_file', type=Path)
     strategy_parser = commands.add_parser('strategy')
     strategy_commands = strategy_parser.add_subparsers(
         dest='strategy_command', required=True

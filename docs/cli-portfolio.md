@@ -1,8 +1,9 @@
 # Portfolio CLI
 
-The `portfolio` command creates validated portfolio metadata and can bootstrap
-opening positions from canonical holdings. See the [storage
-contract](README.md) for schemas and validation rules.
+The `portfolio` command creates validated portfolio metadata, bootstraps an
+opening snapshot, and imports ongoing broker activity. See the
+[storage contract](README.md), [schema reference](schemas.md), and
+[import-file contracts](import-files.md) for validation rules.
 
 ## Create a portfolio
 
@@ -15,19 +16,40 @@ The command creates a conventional `portfolio.yaml` manifest below
 configuration](cli.md#data-root). Commands discover it by `kind: Portfolio`, so
 the filename can be changed without changing resource identity.
 
-## Import opening positions
+## Import an opening snapshot
 
-Bootstrap a new portfolio from canonical holdings during creation:
+Bootstrap a new portfolio from canonical positions and cash during creation:
 
 ```shell
 mise run py-fund-manager -- \
   portfolio --create etrade-brokerage \
-  import-stocks /path/to/private/stocks.csv
+  import /path/to/private/opening.csv \
+  --as-of 2020-01-02T16:00:00Z
 ```
 
-The command validates and preserves the source CSV, then writes one
-`opening_position` transaction per holding. Existing imports and transaction
-ledgers are not replaced.
+The CSV uses `amount` for the opening balance and `quantity` for security
+positions. See the [Import Files reference](import-files.md#opening-snapshot-csv)
+for its complete column schema and validation rules. The command validates and
+preserves the source, then writes one ledger row per opening fact. `--as-of` is
+the broker statement's effective timestamp and must include a UTC offset; without
+it, the import time is used. Existing imports and transaction ledgers are not
+replaced.
+
+## Import broker activity
+
+Append confirmed events after the opening boundary:
+
+```shell
+mise run py-fund-manager -- \
+  portfolio etrade-brokerage \
+  import /path/to/private/activity-2020-03.csv
+```
+
+Every event carries its own timestamp and stable source identity. Identical events
+from overlapping exports are skipped; conflicting reuse of an identity fails the
+import. Dividend reinvestment is recorded as a dividend followed by a buy. See
+the [Activity CSV contract](import-files.md#activity-csv) for the complete schema
+and append rules.
 
 ## Rebalance a portfolio
 

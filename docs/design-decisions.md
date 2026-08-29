@@ -91,6 +91,24 @@ exchange timezone. This conservative boundary prevents a same-day close from
 being used before the regular session has ended. Missing provenance metadata and
 conflicting latest observations are validation failures.
 
+## Broker adapters use structural contracts
+
+The `Broker` protocol exposes one operation: fulfill a normalized `BrokerOrder`
+and return confirmed `Execution` records. `HistoricalBroker` satisfies that
+contract through supplied historical observations; future live adapters can
+satisfy it through external APIs without inheriting simulation state.
+
+Plan validation, order normalization, fill validation, and execution-to-ledger
+mapping remain shared application services. The current synchronous workflow
+requires fills to complete each submitted order exactly. Asynchronous order
+status, cancellation, and resumable partial-fill workflows remain future broker
+adapter work rather than implicit behavior in the common contract.
+
+Contribution and withdrawal values on a rebalance plan remain unconfirmed planning
+assumptions. The executor rejects such a plan rather than silently converting an
+assumption into a transaction. A cash movement must first be confirmed in the
+ledger, after which a new executable plan can be generated from that state.
+
 ## Pydantic models are the schema authority
 
 All persisted inputs and structured outputs are defined as frozen Pydantic models

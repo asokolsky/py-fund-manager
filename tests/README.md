@@ -41,6 +41,10 @@ mise exec -- uv run -m unittest -v \
 - `rebalance_test.py` covers derived holdings, exact order and cash arithmetic,
   cached-price availability and provenance, deterministic inputs, and strict
   contribution and withdrawal plans.
+- `playground_test.py` opens a fictional portfolio with USD 100,000, executes and
+  persists its first equal-weight Mag7 rebalance, imports a dividend, and executes
+  a second rebalance through the generic broker
+  contract at deterministic historical prices.
 - `strategy_test.py` covers immutable strategy revisions and effective assignment
   history.
 - `validation_test.py` covers complete side-effect-free data-root validation and

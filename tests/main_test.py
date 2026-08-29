@@ -101,15 +101,17 @@ class TestCLI(unittest.TestCase):
         validate_mock.assert_called_once_with(data_directory)
         self.assertEqual(stdout.getvalue(), 'Validated sample data.\n')
 
-    def test_create_portfolio_and_import_stocks(self) -> None:
-        """Create a portfolio before importing its opening positions."""
+    def test_create_portfolio_and_import_opening_snapshot(self) -> None:
+        """Create a portfolio before importing its opening facts."""
         arguments = [
             cli.CLI_NAME,
             'portfolio',
             '--create',
             'etrade-brokerage',
-            'import-stocks',
-            'stocks.csv',
+            'import',
+            'opening.csv',
+            '--as-of',
+            '2020-01-02T16:00:00Z',
         ]
         data_directory = cli.Path('test-data')
         portfolio_directory = data_directory / 'portfolio' / 'etrade-brokerage'
@@ -119,15 +121,47 @@ class TestCLI(unittest.TestCase):
             patch.object(
                 cli, 'create_portfolio', return_value=portfolio_directory
             ) as create_mock,
-            patch.object(
-                cli, 'import_opening_positions', return_value=2
-            ) as import_mock,
+            patch.object(cli, 'import_opening_snapshot', return_value=2) as import_mock,
         ):
             result = cli.main()
 
         self.assertEqual(result, 0)
         create_mock.assert_called_once_with(data_directory, 'etrade-brokerage')
-        import_mock.assert_called_once_with(portfolio_directory, cli.Path('stocks.csv'))
+        import_mock.assert_called_once_with(
+            portfolio_directory,
+            cli.Path('opening.csv'),
+            occurred_at=datetime(2020, 1, 2, 16, tzinfo=UTC),
+        )
+
+    def test_import_portfolio_activity(self) -> None:
+        """Import independently timestamped events into an existing portfolio."""
+        arguments = [
+            cli.CLI_NAME,
+            'portfolio',
+            'etrade-brokerage',
+            'import',
+            'activity.csv',
+        ]
+        data_directory = cli.Path('test-data')
+        import_result = Mock(imported=2, skipped=1)
+        stdout = io.StringIO()
+        with (
+            patch.object(sys, 'argv', arguments),
+            patch.object(cli, 'data_directory', return_value=data_directory),
+            patch.object(
+                cli, 'import_activity', return_value=import_result
+            ) as import_mock,
+            redirect_stdout(stdout),
+        ):
+            result = cli.main()
+
+        self.assertEqual(result, 0)
+        import_mock.assert_called_once_with(
+            data_directory / 'portfolio' / 'etrade-brokerage',
+            cli.Path('activity.csv'),
+        )
+        self.assertIn('Imported 2 activity events', stdout.getvalue())
+        self.assertIn('skipped 1', stdout.getvalue())
 
     def test_set_portfolio_strategy(self) -> None:
         """Parse and dispatch an effective-dated strategy assignment."""

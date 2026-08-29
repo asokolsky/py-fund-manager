@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import os
 import shutil
 import tempfile
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast, overload
@@ -83,6 +85,29 @@ TRANSACTION_FIELDS = (
     'external_id',
 )
 
+ACTIVITY_SECURITY_EVENTS = {
+    TransactionType.POSITION_ADJUSTMENT,
+    TransactionType.BUY,
+    TransactionType.SELL,
+    TransactionType.TRANSFER_IN,
+    TransactionType.TRANSFER_OUT,
+}
+ACTIVITY_CASH_EVENTS = {
+    TransactionType.DEPOSIT,
+    TransactionType.WITHDRAWAL,
+    TransactionType.DIVIDEND,
+    TransactionType.INTEREST,
+    TransactionType.FEE,
+}
+
+
+@dataclass(frozen=True)
+class ActivityImportResult:
+    """Counts produced by an idempotent activity import."""
+
+    imported: int
+    skipped: int
+
 
 def create_portfolio(data_directory: Path, portfolio_id: str) -> Path:
     """Create a portfolio directory and its initial YAML configuration."""
@@ -110,15 +135,15 @@ def create_portfolio(data_directory: Path, portfolio_id: str) -> Path:
     return portfolio_directory
 
 
-def import_opening_positions(
+def import_opening_snapshot(
     portfolio_directory: Path,
     source: Path,
     *,
     occurred_at: datetime | None = None,
 ) -> int:
-    """Import canonical broker holdings as an opening transaction ledger."""
+    """Import a canonical opening position and cash snapshot."""
     if not source.is_file():
-        msg = f"holdings file '{source}' does not exist or is not a file"
+        msg = f"opening snapshot '{source}' does not exist or is not a file"
         raise TypeError(msg)
     ledger_path = portfolio_directory / 'transactions.csv'
     if ledger_path.exists():
@@ -127,9 +152,18 @@ def import_opening_positions(
 
     import_time = occurred_at or datetime.now(UTC)
     if import_time.tzinfo is None:
-        msg = 'opening-position time must include a UTC offset'
+        msg = 'opening snapshot time must include a UTC offset'
         raise TypeError(msg)
-    rows = _read_opening_positions(source, import_time)
+    _, portfolio = find_manifest(
+        portfolio_directory,
+        'Portfolio',
+        expected_name=portfolio_directory.name,
+    )
+    transactions = _read_opening_snapshot(
+        source, import_time, portfolio.spec.base_currency
+    )
+    validate_transaction_ledger(transactions)
+    rows = [_transaction_row(transaction) for transaction in transactions]
 
     imports_directory = portfolio_directory / 'imports'
     imports_directory.mkdir(exist_ok=True)
@@ -143,7 +177,68 @@ def import_opening_positions(
     except Exception:
         preserved_source.unlink()
         raise
-    return len(rows)
+    return len(transactions)
+
+
+def import_activity(portfolio_directory: Path, source: Path) -> ActivityImportResult:
+    """Append canonical broker activity while skipping identical known events."""
+    if not source.is_file():
+        msg = f"activity file '{source}' does not exist or is not a file"
+        raise TypeError(msg)
+    ledger_path = portfolio_directory / 'transactions.csv'
+    if not ledger_path.is_file():
+        msg = f'{ledger_path} does not exist; import an opening snapshot first'
+        raise FileNotFoundError(msg)
+    _, portfolio = find_manifest(
+        portfolio_directory,
+        'Portfolio',
+        expected_name=portfolio_directory.name,
+    )
+    existing = load_transactions(ledger_path)
+    incoming = _read_activity(source, portfolio.spec.base_currency)
+    known = {
+        transaction.external_id: transaction
+        for transaction in existing
+        if transaction.external_id is not None
+    }
+    additions: list[Transaction] = []
+    skipped = 0
+    for transaction in incoming:
+        external_id = transaction.external_id
+        if external_id is None:  # Defensive: activity parsing requires this field.
+            msg = f'{source}: parsed activity is missing external_id'
+            raise ValueError(msg)
+        previous = known.get(external_id)
+        if previous is None:
+            additions.append(transaction)
+            known[external_id] = transaction
+            continue
+        if _transaction_fact(previous) != _transaction_fact(transaction):
+            msg = (
+                f'{source}: external_id {external_id!r} conflicts '
+                'with the existing ledger'
+            )
+            raise ValueError(msg)
+        skipped += 1
+
+    combined = [*existing, *additions]
+    validate_transaction_ledger(combined)
+    imports_directory = portfolio_directory / 'imports'
+    imports_directory.mkdir(exist_ok=True)
+    preserved_source = imports_directory / source.name
+    if preserved_source.exists():
+        msg = f'{preserved_source} already exists; source import was not replaced'
+        raise FileExistsError(msg)
+    _atomic_copy(source, preserved_source)
+    try:
+        _atomic_write_csv(
+            ledger_path,
+            [_transaction_row(transaction) for transaction in combined],
+        )
+    except Exception:
+        preserved_source.unlink()
+        raise
+    return ActivityImportResult(imported=len(additions), skipped=skipped)
 
 
 def load_portfolio(path: Path) -> Portfolio:
@@ -292,7 +387,6 @@ def load_directory_manifests(directory: Path) -> list[tuple[Path, Manifest]]:
 def load_transactions(path: Path) -> list[Transaction]:
     """Load and validate an ordered transaction ledger from CSV."""
     transactions: list[Transaction] = []
-    seen_ids: set[str] = set()
     with path.open(newline='', encoding='utf-8') as ledger_file:
         for line_number, row in enumerate(csv.DictReader(ledger_file), start=2):
             context = Path(f'{path}:{line_number}')
@@ -301,75 +395,222 @@ def load_transactions(path: Path) -> list[Transaction]:
                 transaction = Transaction.model_validate(normalized)
             except ValueError as error:
                 raise ValueError(f'{context}: {error}') from error
-            if transaction.id in seen_ids:
-                msg = f'{context}: duplicate transaction id {transaction.id}'
-                raise ValueError(msg)
-            seen_ids.add(transaction.id)
             transactions.append(transaction)
+    validate_transaction_ledger(transactions, path=path)
     return transactions
 
 
-def _read_opening_positions(
-    source: Path, occurred_at: datetime
-) -> list[dict[str, str]]:
-    """Validate canonical holdings CSV rows and map them to ledger rows."""
-    rows: list[dict[str, str]] = []
+def validate_transaction_ledger(
+    transactions: list[Transaction] | tuple[Transaction, ...],
+    *,
+    path: Path | None = None,
+) -> None:
+    """Require stable identities and chronological ordering across a ledger."""
+    seen_ids: set[str] = set()
+    seen_external_ids: set[str] = set()
+    previous: Transaction | None = None
+    for index, transaction in enumerate(transactions, start=2):
+        context = f'{path}:{index}' if path is not None else f'transaction row {index}'
+        if transaction.id in seen_ids:
+            msg = f'{context}: duplicate transaction id {transaction.id}'
+            raise ValueError(msg)
+        seen_ids.add(transaction.id)
+        if (
+            transaction.external_id is not None
+            and transaction.external_id in seen_external_ids
+        ):
+            msg = f'{context}: duplicate external_id {transaction.external_id}'
+            raise ValueError(msg)
+        if transaction.external_id is not None:
+            seen_external_ids.add(transaction.external_id)
+        if previous is not None and transaction.occurred_at < previous.occurred_at:
+            msg = f'{context}: transaction {transaction.id} occurs before {previous.id}'
+            raise ValueError(msg)
+        previous = transaction
+
+
+def _read_opening_snapshot(
+    source: Path, occurred_at: datetime, base_currency: str
+) -> list[Transaction]:
+    """Validate canonical opening position and cash rows."""
+    transactions: list[Transaction] = []
     seen_tickers: set[str] = set()
+    cash_rows = 0
     with source.open(newline='', encoding='utf-8-sig') as source_file:
         reader = csv.DictReader(source_file)
-        required_fields = {'ticker', 'quantity'}
+        required_fields = {'asset'}
         if reader.fieldnames is None or not required_fields.issubset(reader.fieldnames):
-            msg = f'{source}: required CSV columns are ticker and quantity'
+            msg = f'{source}: required CSV column is asset'
+            raise ValueError(msg)
+        allowed_fields = {'asset', 'quantity', 'amount', 'cost_basis'}
+        unsupported_fields = set(reader.fieldnames) - allowed_fields
+        if unsupported_fields:
+            fields = ', '.join(sorted(unsupported_fields))
+            msg = f'{source}: unsupported CSV columns: {fields}'
             raise ValueError(msg)
         for line_number, source_row in enumerate(reader, start=2):
             context = Path(f'{source}:{line_number}')
-            transaction = Transaction.model_validate(
-                {
-                    'id': f'opening-{line_number - 1:06d}',
-                    'occurred_at': occurred_at,
-                    'type': TransactionType.OPENING_POSITION,
-                    'ticker': source_row.get('ticker'),
-                    'quantity': source_row.get('quantity'),
-                    'cost_basis': source_row.get('cost_basis') or None,
-                    'currency': source_row.get('currency') or 'USD',
-                    'external_id': source_row.get('external_id')
-                    or f'{source.name}:{line_number}',
-                }
-            )
-            if transaction.ticker in seen_tickers:
-                msg = f'{context}: duplicate opening position for {transaction.ticker}'
+            has_quantity = bool(source_row.get('quantity'))
+            has_amount = bool(source_row.get('amount'))
+            if has_quantity == has_amount:
+                msg = f'{context}: row requires exactly one of quantity or amount'
                 raise ValueError(msg)
-            if transaction.ticker is None:
-                msg = f'{context}: opening position requires ticker'
-                raise ValueError(msg)
-            seen_tickers.add(transaction.ticker)
-            rows.append(
-                {
-                    'id': transaction.id,
-                    'occurred_at': transaction.occurred_at.isoformat(),
-                    'type': transaction.type,
-                    'ticker': transaction.ticker,
-                    'quantity': str(transaction.quantity),
-                    'price': '',
-                    'amount': '',
-                    'cost_basis': (
-                        ''
-                        if transaction.cost_basis is None
-                        else str(transaction.cost_basis)
-                    ),
-                    'currency': transaction.currency,
-                    'fees': '',
-                    'external_id': transaction.external_id or '',
-                }
+            asset = (source_row.get('asset') or '').strip().upper()
+            is_position = has_quantity
+            transaction_type = (
+                TransactionType.OPENING_POSITION
+                if is_position
+                else TransactionType.OPENING_CASH
             )
-    if not rows:
-        msg = f'{source}: holdings CSV contains no positions'
+            try:
+                transaction = Transaction.model_validate(
+                    {
+                        'id': f'opening-{line_number - 1:06d}',
+                        'occurred_at': occurred_at,
+                        'type': transaction_type,
+                        'ticker': asset if is_position else None,
+                        'quantity': source_row.get('quantity') or None,
+                        'amount': source_row.get('amount') or None,
+                        'cost_basis': source_row.get('cost_basis') or None,
+                        'currency': base_currency if is_position else asset,
+                    }
+                )
+            except ValueError as error:
+                raise ValueError(f'{context}: {error}') from error
+            if transaction.currency != base_currency:
+                msg = (
+                    f'{context}: opening fact uses {transaction.currency}; '
+                    f'portfolio uses {base_currency}'
+                )
+                raise ValueError(msg)
+            if is_position:
+                if transaction.ticker in seen_tickers:
+                    msg = (
+                        f'{context}: duplicate opening position for '
+                        f'{transaction.ticker}'
+                    )
+                    raise ValueError(msg)
+                if transaction.ticker is None:
+                    msg = f'{context}: opening position requires ticker'
+                    raise ValueError(msg)
+                seen_tickers.add(transaction.ticker)
+            else:
+                cash_rows += 1
+                if cash_rows > 1:
+                    msg = f'{context}: opening snapshot contains multiple cash rows'
+                    raise ValueError(msg)
+            transactions.append(transaction)
+    if not transactions:
+        msg = f'{source}: opening CSV contains no facts'
         raise ValueError(msg)
-    return rows
+    return transactions
+
+
+def _read_activity(source: Path, base_currency: str) -> list[Transaction]:
+    """Validate canonical independently timestamped broker activity rows."""
+    transactions: list[Transaction] = []
+    seen_external_ids: set[str] = set()
+    allowed_fields = {
+        'occurred_at',
+        'event',
+        'asset',
+        'quantity',
+        'amount',
+        'price',
+        'cost_basis',
+        'fees',
+        'external_id',
+    }
+    with source.open(newline='', encoding='utf-8-sig') as source_file:
+        reader = csv.DictReader(source_file)
+        required_fields = {'occurred_at', 'event', 'asset', 'external_id'}
+        if reader.fieldnames is None or not required_fields.issubset(reader.fieldnames):
+            fields = ', '.join(sorted(required_fields))
+            msg = f'{source}: required CSV columns are {fields}'
+            raise ValueError(msg)
+        unsupported_fields = set(reader.fieldnames) - allowed_fields
+        if unsupported_fields:
+            fields = ', '.join(sorted(unsupported_fields))
+            msg = f'{source}: unsupported CSV columns: {fields}'
+            raise ValueError(msg)
+        for line_number, source_row in enumerate(reader, start=2):
+            context = Path(f'{source}:{line_number}')
+            event_value = (source_row.get('event') or '').strip()
+            try:
+                event = TransactionType(event_value)
+            except ValueError as error:
+                msg = f'{context}: unsupported activity event {event_value!r}'
+                raise ValueError(msg) from error
+            if event not in ACTIVITY_SECURITY_EVENTS | ACTIVITY_CASH_EVENTS:
+                msg = f'{context}: unsupported activity event {event_value!r}'
+                raise ValueError(msg)
+            external_id = (source_row.get('external_id') or '').strip()
+            if not external_id:
+                msg = f'{context}: external_id is required'
+                raise ValueError(msg)
+            if external_id in seen_external_ids:
+                msg = f'{context}: duplicate external_id {external_id}'
+                raise ValueError(msg)
+            seen_external_ids.add(external_id)
+            asset = (source_row.get('asset') or '').strip().upper()
+            is_security = event in ACTIVITY_SECURITY_EVENTS
+            if not is_security and any(
+                source_row.get(field) for field in ('quantity', 'price', 'cost_basis')
+            ):
+                msg = (
+                    f'{context}: cash activity does not accept quantity, price, '
+                    'or cost_basis'
+                )
+                raise ValueError(msg)
+            transaction_id = hashlib.sha256(external_id.encode()).hexdigest()[:20]
+            try:
+                transaction = Transaction.model_validate(
+                    {
+                        'id': f'activity-{transaction_id}',
+                        'occurred_at': source_row.get('occurred_at'),
+                        'type': event,
+                        'ticker': asset if is_security else None,
+                        'currency': base_currency if is_security else asset,
+                        'quantity': source_row.get('quantity') or None,
+                        'amount': source_row.get('amount') or None,
+                        'price': source_row.get('price') or None,
+                        'cost_basis': source_row.get('cost_basis') or None,
+                        'fees': source_row.get('fees') or 0,
+                        'external_id': external_id,
+                    }
+                )
+            except ValueError as error:
+                raise ValueError(f'{context}: {error}') from error
+            if transaction.currency != base_currency:
+                msg = (
+                    f'{context}: activity uses {transaction.currency}; '
+                    f'portfolio uses {base_currency}'
+                )
+                raise ValueError(msg)
+            transactions.append(transaction)
+    if not transactions:
+        msg = f'{source}: activity CSV contains no events'
+        raise ValueError(msg)
+    validate_transaction_ledger(transactions, path=source)
+    return transactions
+
+
+def _transaction_fact(transaction: Transaction) -> dict[str, Any]:
+    """Return transaction content excluding its local ledger identity."""
+    return transaction.model_dump(mode='json', exclude={'id'})
+
+
+def _transaction_row(transaction: Transaction) -> dict[str, str]:
+    """Serialize one validated transaction into the canonical CSV columns."""
+    document = transaction.model_dump(mode='json')
+    return {
+        field: '' if document[field] is None else str(document[field])
+        for field in TRANSACTION_FIELDS
+    }
 
 
 def _atomic_write_csv(path: Path, rows: list[dict[str, str]]) -> None:
-    """Write ledger rows atomically without replacing an existing ledger."""
+    """Write complete ledger rows through an atomic replacement."""
     with tempfile.NamedTemporaryFile(
         mode='w',
         newline='',

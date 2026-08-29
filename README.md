@@ -6,11 +6,13 @@ downloading historical market prices.
 ## Current capabilities
 
 - Create a portfolio with validated YAML metadata.
-- Bootstrap opening positions from a canonical holdings CSV.
+- Bootstrap opening positions and cash from a canonical CSV snapshot.
+- Import timestamped broker activity with idempotent source identities.
 - Store positions in a validated, append-oriented transaction ledger.
 - Assign effective-dated strategies with immutable content revisions.
 - Validate strict YAML manifests, resource identities, and revision references.
 - Generate strict JSON rebalance plans for contributions and withdrawals.
+- Simulate reviewed rebalance plans deterministically at recorded historical prices.
 - Download Yahoo Finance prices into atomic, year-partitioned Parquet files.
 
 See [planned work](docs/todo.md) for capabilities that are not implemented yet.
@@ -34,6 +36,8 @@ See [planned work](docs/todo.md) for capabilities that are not implemented yet.
 
 - [Concepts](docs/concepts.md) defines the domain model.
 - [Portfolio storage and validation](docs/README.md) is the data contract.
+- [Schemas](docs/schemas.md) defines canonical manifests, ledgers, and plans.
+- [Import files](docs/import-files.md) defines every accepted import format.
 - [Design decisions](docs/design-decisions.md) records settled choices.
 - [Planned work](docs/todo.md) tracks unimplemented capabilities and open work.
 - [Sample data](sample-data/README.md) explains fictional examples and private

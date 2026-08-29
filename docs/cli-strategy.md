@@ -1,7 +1,7 @@
 # Strategy CLI
 
 Strategy-assignment commands manage the effective strategy for a portfolio. The
-[storage contract](README.md#strategy-history-schema) defines their persisted
+[schema reference](schemas.md#strategyhistory) defines their persisted
 result, and [Concepts](concepts.md#strategy) defines assignment semantics.
 
 ## Show the effective strategy

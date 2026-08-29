@@ -3,3 +3,6 @@
 !README.md
 !sample/
 !sample/**
+!playground/
+playground/*
+!playground/README.md
