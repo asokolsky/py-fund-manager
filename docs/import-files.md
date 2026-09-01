@@ -2,7 +2,8 @@
 
 This document is the authoritative contract for files accepted by import
 commands. Imported files are validated application inputs, distinct from the
-canonical manifests and ledgers described in the [storage contract](README.md).
+canonical manifests and ledgers described in the [storage
+contract](portfolio-storage-validation.md).
 
 ## Supported files
 
@@ -34,7 +35,7 @@ adapter exists yet.
 - Validation errors identify the source row when applicable.
 
 Real statements and account data belong in a private data root, not this public
-repo. See the [sample-data guide](../sample-data/README.md#store-real-data-in-a-private-repo).
+repo. See [Sample and Personal Data](data.md).
 
 ## Opening snapshot CSV
 

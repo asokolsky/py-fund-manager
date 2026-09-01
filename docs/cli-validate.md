@@ -52,5 +52,6 @@ used by portfolio operations.
 
 The command validates configuration before scanning data. A missing configuration
 file, missing `data.root`, nonexistent root, or non-directory root is an error.
-See the [storage and validation contract](README.md) for the complete manifest and
+See the [storage and validation
+contract](portfolio-storage-validation.md) for the complete manifest and
 directory rules.

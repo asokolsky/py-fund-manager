@@ -1,8 +1,8 @@
-# Sample Portfolios and Real Data
+# Sample Portfolios
 
 This directory contains fictional portfolios within the explicit
 [`sample-data/`](../README.md) data root. It demonstrates the storage contract in
-[`docs/README.md`](../../docs/README.md).
+[`docs/portfolio-storage-validation.md`](../../docs/portfolio-storage-validation.md).
 
 ## Sample portfolio
 
@@ -26,31 +26,12 @@ actual account identifiers.
 Mag7 lifecycle exercised by `tests/playground_test.py`, including its synthetic
 price assumptions, dividend update, second rebalance, and explicit test limits.
 
-## Point the CLI at real data
+## Use a private data root
 
 The sample does not contain a committed pointer or reference to real data. The
-[CLI overview](../../docs/cli.md#data-root) explains how the per-user TOML setting
-selects a data root.
-
-That root can be a separate private Git repo checked out beside the public code
-repo:
-
-```text
-PersonalProjects/
-├── py-fund-manager/       # public code and fictional sample
-└── py-fund-manager-data/  # private Git repo and real data root
-    ├── .git/
-    └── portfolio/
-```
-
-If the private repo already exists remotely, clone it as the sibling
-`py-fund-manager-data/` directory. For a new local private repo, create the
-directory, initialize Git there, and configure a private remote before publishing
-anything. See the [portfolio CLI guide](../../docs/cli-portfolio.md) for creation
-and bootstrap commands.
+[Sample and Personal Data](../../docs/data.md) explains how to keep real account
+data separate and select a private data root. See the [portfolio CLI
+guide](../../docs/cli-portfolio.md) for creation and bootstrap commands.
 
 `.gitignore` ignores any additional portfolio directory created here;
-only the fictional `sample/` tree is intended for version control. A separate
-private repo or encrypted, backed-up directory remains the preferred location for
-real account data. Private-repo access restrictions do not encrypt the working
-copy, Git history, or backups; apply encryption and retention controls separately.
+only the fictional `sample/` tree is intended for version control.

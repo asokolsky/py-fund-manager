@@ -2,7 +2,7 @@
 
 The `portfolio` command creates validated portfolio metadata, bootstraps an
 opening snapshot, and imports ongoing broker activity. See the
-[storage contract](README.md), [schema reference](schemas.md), and
+[storage contract](portfolio-storage-validation.md), [schema reference](schemas.md), and
 [import-file contracts](import-files.md) for validation rules.
 
 ## Create a portfolio

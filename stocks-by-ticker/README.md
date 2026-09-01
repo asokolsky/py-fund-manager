@@ -5,7 +5,8 @@ interval and ticker has its own directory, with its history split into one
 Parquet file per calendar year.
 
 This market-price cache is independent of portfolio account data. Portfolio
-metadata and transaction ledgers follow [the portfolio storage contract](../docs/README.md);
+metadata and transaction ledgers follow [the portfolio storage
+contract](../docs/portfolio-storage-validation.md);
 they must not be placed in this generated directory.
 
 Use this layout when analysis focuses on one stock at a time, such as training a

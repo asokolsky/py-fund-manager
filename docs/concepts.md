@@ -1,7 +1,8 @@
 # Concepts
 
 This document defines the domain model independently of file formats and CLI
-commands. See the [storage and validation contract](README.md) for persistence,
+commands. See the [storage and validation
+contract](portfolio-storage-validation.md) for persistence,
 schemas, directory layout, and implementation status.
 
 ## Portfolio

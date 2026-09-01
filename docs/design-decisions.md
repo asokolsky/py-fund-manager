@@ -2,7 +2,7 @@
 
 This document records settled storage and validation choices. See
 [Concepts](concepts.md) for the domain model and [Portfolio Storage and
-Validation](README.md) for the resulting contract.
+Validation](portfolio-storage-validation.md) for the resulting contract.
 
 ## Separate portfolio, ledger, import, and strategy files
 
@@ -139,13 +139,12 @@ contract describe those models; they are not independent schemas.
 Code, documentation, and reviewed fictional examples belong in this repo.
 Broker exports, account metadata, and transaction ledgers may contain sensitive
 information and should live in a separate private directory or repo selected
-in the per-user TOML configuration.
+in the per-user TOML configuration. [Sample and Personal Data](data.md) documents
+the supported layout and setup.
 
 A private Git repo controls repo access but does not encrypt its local
 checkout, history, or backups. Backup, encryption, and secret-scanning policy is
 still [planned work](todo.md).
 
-The required setting in `~/.config/py-fund-manager/config.toml` makes the active
-data location explicit without modifying this repo. The supplied sample setting
-selects `sample-data/`; a private checkout can be selected instead. See the [CLI
-overview](cli.md#data-root) for the configuration contract.
+The required per-user setting makes the active data location explicit without
+modifying this repo.

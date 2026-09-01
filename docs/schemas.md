@@ -2,7 +2,8 @@
 
 This document is the authoritative schema reference for canonical portfolio
 data and generated plans. Directory placement, discovery, and persistence rules
-belong in the [storage and validation reference](README.md). Input-file formats
+belong in the [storage and validation
+reference](portfolio-storage-validation.md). Input-file formats
 belong in [Import Files](import-files.md).
 
 All manifests use a strict `apiVersion`, `kind`, `metadata`, and `spec` envelope.

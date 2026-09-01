@@ -6,7 +6,9 @@ not represent an actual brokerage account.
 
 `strategy.yaml` is generated from the ignored SPY holdings workbook by
 `generate_strategy.py` and follows the validated schema in
-[docs/README.md](../../../docs/README.md). Regenerate it from the repo root with:
+[Portfolio Storage and
+Validation](../../../docs/portfolio-storage-validation.md). Regenerate it from
+the repo root with:
 
 ```shell
 mise exec -- uv run python \

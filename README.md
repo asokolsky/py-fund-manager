@@ -34,30 +34,15 @@ See [planned work](docs/todo.md) for capabilities that are not implemented yet.
 
 ## Documentation
 
-- [Concepts](docs/concepts.md) defines the domain model.
-- [Portfolio storage and validation](docs/README.md) is the data contract.
-- [Schemas](docs/schemas.md) defines canonical manifests, ledgers, and plans.
-- [Import files](docs/import-files.md) defines every accepted import format.
-- [Design decisions](docs/design-decisions.md) records settled choices.
-- [Planned work](docs/todo.md) tracks unimplemented capabilities and open work.
-- [Sample data](sample-data/README.md) explains fictional examples and private
-  data roots.
-- [Command-line interface](docs/cli.md) links command-specific usage guides,
-  including [complete data-root validation](docs/cli-validate.md).
-- [Sources](docs/sources.md) lists external references.
+See the [documentation index](docs/README.md) for the domain model, storage
+contract, data-root setup, schemas, input formats, CLI guides, design decisions,
+planned work, and sources.
 
 ## Per-user configuration
 
-Personal portfolio data does not belong in this public repo. Store private
-portfolios and strategies in a separate private repo, then point the global
-configuration to its local checkout.
-
-[`docs/config.toml.example`](docs/config.toml.example) is a sample global
-configuration. Copy it to `~/.config/py-fund-manager/config.toml` and update
-`data.root` to select the directory containing private `portfolio/` and
-`strategy/`. The setting is required; the supplied sample explicitly selects
-this repo's fictional `sample-data/` root. See the [CLI configuration
-reference](docs/cli.md#data-root) for installation and path-resolution details.
+See [Sample and Personal Data](docs/data.md) for the private-storage boundary and
+per-user setup. The [CLI configuration reference](docs/cli.md#data-root)
+documents path resolution.
 
 ## Development
 

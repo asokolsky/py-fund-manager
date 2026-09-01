@@ -54,5 +54,5 @@ The root may be absolute, start with `~`, or be relative to the configuration
 file. The configuration file, `data.root` setting, and selected directory are
 required.
 
-See the [sample-data guide](../sample-data/README.md) for the expected private
-checkout layout.
+See [Sample and Personal Data](data.md) for the fictional data shipped with this
+repo, the privacy boundary, and the recommended private-repo setup.
