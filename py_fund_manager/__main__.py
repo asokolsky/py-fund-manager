@@ -120,8 +120,15 @@ def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuse
     historical_parser = broker_commands.add_parser(
         'historical', help='Execute a plan from cached historical prices'
     )
-    historical_parser.add_argument('plan_file', type=Path)
-    historical_parser.add_argument('--as-of', type=effective_time, required=True)
+    historical_parser.add_argument(
+        'plan_file', type=Path, help='Reviewed rebalance-plan JSON file'
+    )
+    historical_parser.add_argument(
+        '--as-of',
+        type=effective_time,
+        required=True,
+        help='Execution timestamp for cached historical prices',
+    )
     strategy_parser = commands.add_parser(
         'strategy', help='Inspect standalone strategy manifests'
     )
@@ -142,7 +149,7 @@ def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuse
     portfolio_commands = portfolio_parser.add_subparsers(
         dest='portfolio_command', required=True
     )
-    create_parser = portfolio_commands.add_parser('create')
+    create_parser = portfolio_commands.add_parser('create', help='Create a portfolio')
     create_parser.add_argument('portfolio_id')
     create_parser.add_argument(
         '--broker',
@@ -165,10 +172,14 @@ def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuse
         metavar='BALANCES|@FILE',
         help='Comma-separated ASSET:VALUE balances or @ followed by a CSV file',
     )
-    import_parser = portfolio_commands.add_parser('import')
+    import_parser = portfolio_commands.add_parser(
+        'import', help='Import broker activity or executions'
+    )
     import_parser.add_argument('portfolio_id')
     import_parser.add_argument('source_file', type=Path)
-    portfolio_strategy_parser = portfolio_commands.add_parser('strategy')
+    portfolio_strategy_parser = portfolio_commands.add_parser(
+        'strategy', help='Inspect and assign portfolio strategies'
+    )
     portfolio_strategy_parser.add_argument('portfolio_id')
     portfolio_strategy_commands = portfolio_strategy_parser.add_subparsers(
         dest='strategy_command', required=True
@@ -180,7 +191,9 @@ def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuse
     portfolio_set_parser.add_argument('strategy_id')
     portfolio_set_parser.add_argument('--as-of', type=effective_time)
     portfolio_set_parser.add_argument('--reason')
-    portfolio_rebalance_parser = portfolio_commands.add_parser('rebalance')
+    portfolio_rebalance_parser = portfolio_commands.add_parser(
+        'rebalance', help='Generate a rebalance plan'
+    )
     portfolio_rebalance_parser.add_argument('portfolio_id')
     portfolio_rebalance_parser.add_argument(
         '--withdraw', type=nonnegative_amount, default=Decimal(0), dest='withdrawal'

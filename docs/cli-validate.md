@@ -4,9 +4,22 @@ The `validate` command verifies the complete configured data root without writin
 files or making network requests. It uses the same strict YAML loader, Pydantic
 models, resource discovery, and reference resolution as normal operations.
 
+## Help output
+
+```shell
+mise run py-fund-manager -- validate -h
+```
+
+```text
+usage: py-fund-manager validate [-h]
+
+options:
+  -h, --help  show this help message and exit
+```
+
 ## Run validation
 
-Configure the [data root](cli.md#data-root), then run:
+Configure the [data root](data.md#data-root-configuration), then run:
 
 ```shell
 mise run py-fund-manager -- validate

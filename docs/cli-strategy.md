@@ -6,6 +6,24 @@ for a portfolio. The
 [schema reference](schemas.md#strategyhistory) defines their persisted
 result, and [Concepts](concepts.md#strategy) defines assignment semantics.
 
+## Help output
+
+```shell
+mise run py-fund-manager -- strategy -h
+```
+
+```text
+usage: py-fund-manager strategy [-h] {show,tickers} ...
+
+positional arguments:
+  {show,tickers}
+    show          Validate and summarize a strategy manifest
+    tickers       Print sorted ticker symbols as a comma-separated value
+
+options:
+  -h, --help      show this help message and exit
+```
+
 ## Show a strategy manifest
 
 ```shell

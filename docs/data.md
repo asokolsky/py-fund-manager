@@ -68,19 +68,33 @@ backups. Apply suitable encryption, backup, and retention controls separately;
 stronger defaults remain [planned
 work](todo.md#supporting-design-and-validation).
 
-## Configure the CLI
+## Data root configuration
 
-Copy [`config.toml.example`](config.toml.example) to
-`~/.config/py-fund-manager/config.toml`, then update `data.root` to select the
-private data root:
+Portfolio commands read the data root from the per-user configuration file:
+
+```text
+~/.config/py-fund-manager/config.toml
+```
+
+Set the checkout or directory in TOML:
 
 ```toml
 [data]
 root = "~/PersonalProjects/py-fund-manager-data"
 ```
 
-The setting is required. See the [CLI data-root
-reference](cli.md#data-root) for path-resolution details, the [storage
+[`config.toml.example`](config.toml.example) is a copyable per-user sample that
+points to this repo's `sample-data/` directory, assuming the repo is checked out
+at `~/PersonalProjects/py-fund-manager`. Adjust its root when the checkout lives
+elsewhere, then install it as
+`~/.config/py-fund-manager/config.toml`.
+
+`XDG_CONFIG_HOME` replaces `~/.config` when that environment variable is set.
+The root may be absolute, start with `~`, or be relative to the configuration
+file. The configuration file, `data.root` setting, and selected directory are
+required.
+
+See the [storage
 contract](portfolio-storage-validation.md#directories-and-data-roots) for the
-directory layout, and the [validation command](cli-validate.md) for checking the
+directory layout and the [validation command](cli-validate.md) for checking the
 selected root.

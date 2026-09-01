@@ -5,6 +5,55 @@ opening snapshot, and imports ongoing broker activity. See the
 [storage contract](portfolio-storage-validation.md), [schema reference](schemas.md), and
 [import-file contracts](import-files.md) for validation rules.
 
+## Help output
+
+```shell
+mise run py-fund-manager -- portfolio -h
+```
+
+```text
+usage: py-fund-manager portfolio [-h] {create,import,strategy,rebalance} ...
+
+positional arguments:
+  {create,import,strategy,rebalance}
+    create              Create a portfolio
+    import              Import broker activity or executions
+    strategy            Inspect and assign portfolio strategies
+    rebalance           Generate a rebalance plan
+
+options:
+  -h, --help            show this help message and exit
+```
+
+The creation command exposes the account identity and optional opening-balance
+inputs:
+
+```shell
+mise run py-fund-manager -- portfolio create -h
+```
+
+```text
+usage: py-fund-manager portfolio create [-h] --broker BROKER
+                                        --account-id ACCOUNT_ID
+                                        [--as-of AS_OF]
+                                        [--balance BALANCES|@FILE]
+                                        portfolio_id
+
+positional arguments:
+  portfolio_id
+
+options:
+  -h, --help            show this help message and exit
+  --broker BROKER       Broker identifier for a newly created portfolio
+  --account-id ACCOUNT_ID
+                        Broker account identifier for a newly created
+                        portfolio
+  --as-of AS_OF         Timestamp for opening balances
+  --balance BALANCES|@FILE
+                        Comma-separated ASSET:VALUE balances or @ followed by
+                        a CSV file
+```
+
 ## Create a portfolio
 
 ```shell
@@ -15,7 +64,8 @@ mise run py-fund-manager -- \
 ```
 
 The command creates `portfolio/brokerage/portfolio.yaml` in the
-root selected by the required [global configuration](cli.md#data-root).
+root selected by the required [global
+configuration](data.md#data-root-configuration).
 `--broker` identifies the broker adapter or source, while `--account-id`
 preserves the broker's identifier for the account; neither value is inferred
 from the portfolio ID. Commands discover the manifest by `kind: Portfolio`, so
@@ -206,6 +256,8 @@ mise run py-fund-manager -- \
   --as-of 2026-08-26T14:00:00-07:00 \
   > executions-2026-08-26.json
 ```
+
+See the [broker CLI guide](cli-broker.md) for execution behavior.
 
 The broker command loads the portfolio named by the plan and its current ledger.
 Before submitting orders, it verifies that the plan still matches the portfolio,

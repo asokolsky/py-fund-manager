@@ -38,11 +38,14 @@ See the [documentation index](docs/README.md) for the domain model, storage
 contract, data-root setup, schemas, input formats, CLI guides, design decisions,
 planned work, and sources.
 
-## Per-user configuration
+## CLI configuration
 
-See [Sample and Personal Data](docs/data.md) for the private-storage boundary and
-per-user setup. The [CLI configuration reference](docs/cli.md#data-root)
-documents path resolution.
+Portfolio commands require a per-user configuration file at
+`~/.config/py-fund-manager/config.toml`. Copy
+[`docs/config.toml.example`](docs/config.toml.example), then select the portfolio
+and strategy data root with `data.root`. See [Sample and Personal
+Data](docs/data.md#data-root-configuration) for installation, path-resolution,
+sample-data, and private-storage guidance.
 
 ## Development
 
