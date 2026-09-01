@@ -86,8 +86,9 @@ assignment neither rebalances the portfolio nor writes financial transactions.
 ## CLI usage
 
 See the [validation CLI guide](cli-validate.md), [portfolio CLI
-guide](cli-portfolio.md), and [strategy CLI guide](cli-strategy.md). General
-invocation and data-root selection are documented in the [CLI overview](cli.md).
+guide](cli-portfolio.md), [broker CLI guide](cli-broker.md), and [strategy CLI
+guide](cli-strategy.md). General invocation and data-root selection are
+documented in the [CLI overview](cli.md).
 
 For a complete historical walkthrough—from portfolio creation through confirmed
 deposits, rebalancing, broker execution, imports, and withdrawals—see the

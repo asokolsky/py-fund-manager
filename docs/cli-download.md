@@ -4,6 +4,30 @@ The `download` command retrieves historical Yahoo Finance prices and writes the
 validated partitions described by the [price-data
 contract](../stocks-by-ticker/README.md).
 
+## Help output
+
+```shell
+mise run py-fund-manager -- download -h
+```
+
+```text
+usage: py-fund-manager download [-h] --tickers TICKERS|@FILE
+                                [--interval {1h,1d,1w}]
+                                years
+
+positional arguments:
+  years                 Year or inclusive year range in YYYY or YYYY-YYYY form
+
+options:
+  -h, --help            show this help message and exit
+  --tickers TICKERS|@FILE
+                        Comma-separated ticker symbols or @ followed by a
+                        ticker file
+  --interval {1h,1d,1w}
+                        Price-bar interval: 1h=hourly, 1d=daily, 1w=weekly
+                        (default: 1d)
+```
+
 ## Tickers and years
 
 Supply a single year or an inclusive range and one or more comma-separated

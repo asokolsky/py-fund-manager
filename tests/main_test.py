@@ -2,6 +2,8 @@
 
 import io
 import os
+import re
+import shlex
 import sys
 import tempfile
 import unittest
@@ -70,6 +72,44 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(stdout.getvalue(), f'{cli.__version__}\n')
         self.assertEqual(stderr.getvalue(), '')
+
+    def test_documented_help_output_matches_cli(self) -> None:
+        """Keep every documented help block synchronized with argparse."""
+        docs_directory = cli.Path(__file__).parents[1] / 'docs'
+        help_block = re.compile(
+            r'```shell\n'
+            r'mise run py-fund-manager -- (?P<arguments>[^\n]+)\n'
+            r'```\n\n'
+            r'```text\n'
+            r'(?P<output>.*?)'
+            r'```',
+            re.DOTALL,
+        )
+
+        for guide in sorted(docs_directory.glob('cli*.md')):
+            matches = list(help_block.finditer(guide.read_text(encoding='utf-8')))
+            self.assertTrue(matches, f'{guide} has no documented help output')
+            for match in matches:
+                arguments = shlex.split(match.group('arguments'))
+                self.assertIn(
+                    arguments[-1],
+                    {'-h', '--help'},
+                    f'{guide} documents a non-help command as help output',
+                )
+                stdout = io.StringIO()
+                stderr = io.StringIO()
+                with (
+                    self.subTest(guide=guide.name, arguments=arguments),
+                    patch.object(sys, 'argv', [cli.CLI_NAME, *arguments]),
+                    redirect_stdout(stdout),
+                    redirect_stderr(stderr),
+                    self.assertRaises(SystemExit) as exit_context,
+                ):
+                    cli.main()
+
+                self.assertEqual(exit_context.exception.code, 0)
+                self.assertEqual(stderr.getvalue(), '')
+                self.assertEqual(match.group('output'), stdout.getvalue())
 
     def test_cash_flow_amount_rejects_sub_cent_precision(self) -> None:
         """Reject withdrawal values smaller than one cent."""
