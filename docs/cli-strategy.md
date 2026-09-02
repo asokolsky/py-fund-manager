@@ -9,7 +9,7 @@ result, and [Concepts](concepts.md#strategy) defines assignment semantics.
 ## Help output
 
 ```shell
-mise run py-fund-manager -- strategy -h
+mise py-fund-manager -- strategy -h
 ```
 
 ```text
@@ -27,8 +27,7 @@ options:
 ## Show a strategy manifest
 
 ```shell
-mise run py-fund-manager -- \
-  strategy show sample-data/strategy/mag7/strategy.yaml
+mise py-fund-manager -- strategy show sample-data/strategy/mag7/strategy.yaml
 ```
 
 The command strictly parses and validates the manifest, then prints its name,
@@ -40,17 +39,15 @@ accepted by the `download` command:
 
 ```shell
 tickers=$(
-  mise run py-fund-manager -- \
-    strategy tickers sample-data/strategy/mag7/strategy.yaml
+  mise py-fund-manager -- strategy tickers sample-data/strategy/mag7/strategy.yaml
 )
-mise run py-fund-manager -- download 2026 --tickers="$tickers"
+mise py-fund-manager -- download 2026 --tickers="$tickers"
 ```
 
 ## Show the effective strategy
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio strategy brokerage show
+mise py-fund-manager -- portfolio strategy brokerage show
 ```
 
 By default, the command shows the assignment effective now. Use `--as-of` with an
@@ -60,8 +57,7 @@ another time.
 ## Show strategy history
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio strategy brokerage history
+mise py-fund-manager -- portfolio strategy brokerage history
 ```
 
 The command shows assignments in effective-time order without modifying them.
@@ -69,8 +65,7 @@ The command shows assignments in effective-time order without modifying them.
 ## Assign a strategy
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio strategy brokerage set SnP500-direct \
+mise py-fund-manager -- portfolio strategy brokerage set SnP500-direct \
   --as-of 2026-09-01T09:00:00-07:00 \
   --reason "Move to direct S&P 500 replication"
 ```

@@ -3,7 +3,7 @@
 ## Development workflow
 
 - Use `mise` for routine project commands.
-- Run the CLI with `mise run py-fund-manager -- [arguments]`.
+- Run the CLI with `mise py-fund-manager -- [arguments]`.
 - After the final edit and before completing, committing, pushing, opening, or
   merging a pull request, run:
   - `mise run format`

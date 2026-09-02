@@ -74,9 +74,7 @@ does not remove the shared historical-price cache or output files such as
 Create the portfolio with its opening cash balance:
 
 ```sh
-mise run py-fund-manager -- \
-  portfolio create playground \
-  --broker historical \
+mise py-fund-manager -- portfolio create playground --broker historical \
   --account-id playground \
   --as-of 2020-01-02T08:00:00-08:00 \
   --balance=USD:100000
@@ -103,8 +101,7 @@ Make the equal-weight Magnificent Seven strategy effective from the opening
 time:
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio strategy playground set mag7 \
+mise py-fund-manager -- portfolio strategy playground set mag7 \
   --as-of 2020-01-02T08:00:00-08:00 \
   --reason "Open the Playground portfolio"
 ```
@@ -126,15 +123,14 @@ Isolate the strategy securities:
 
 ```sh
 tickers=$(
-  mise run py-fund-manager -- \
-    strategy tickers sample-data/strategy/mag7/strategy.yaml
+  mise py-fund-manager -- strategy tickers sample-data/strategy/mag7/strategy.yaml
 )
 ```
 
 Download daily 2020 prices for every security in the strategy:
 
 ```sh
-mise run py-fund-manager -- download 2020 --tickers="$tickers"
+mise py-fund-manager -- download 2020 --tickers="$tickers"
 ```
 
 Expected outcome: `tickers` contains
@@ -156,8 +152,7 @@ Create the plan before the 2020-01-03 market close. At this time, the latest
 eligible daily prices are the 2020-01-02 closes:
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio rebalance playground \
+mise py-fund-manager -- portfolio rebalance playground \
   --as-of 2020-01-03T07:00:00-08:00 \
   > rebalance-plan-2020-01-03.json
 ```
@@ -176,8 +171,7 @@ The regression verifies planning from the historical cache in
 Submit the complete plan to the historical broker at the 2020-01-03 close:
 
 ```shell
-mise run py-fund-manager -- \
-  broker historical rebalance-plan-2020-01-03.json \
+mise py-fund-manager -- broker historical rebalance-plan-2020-01-03.json \
   --as-of 2020-01-03T13:00:00-08:00 \
   > executions-2020-01-03.json
 ```
@@ -208,8 +202,7 @@ interactive command is covered in
 Import the canonical execution JSON directly:
 
 ```sh
-mise run py-fund-manager -- \
-  portfolio import playground executions-2020-01-03.json
+mise py-fund-manager -- portfolio import playground executions-2020-01-03.json
 ```
 
 Expected outcome: the import command reports seven imported activity events,
@@ -240,8 +233,7 @@ That exact file is already committed as
 generation command does not need to be run. Import the committed fixture:
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio import playground tests/data/activity-2020-03-13.csv
+mise py-fund-manager -- portfolio import playground tests/data/activity-2020-03-13.csv
 ```
 
 Expected outcome: the command imports one event from the committed
@@ -260,8 +252,7 @@ The regression verifies the import and the USD 70 cash increase in
 Generate a second plan from the persisted positions and dividend-adjusted cash:
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio rebalance playground --as-of 2020-03-13T14:00:00-07:00 \
+mise py-fund-manager -- portfolio rebalance playground --as-of 2020-03-13T14:00:00-07:00 \
   > rebalance-plan-2020-03-13.json
 ```
 
@@ -273,7 +264,7 @@ provenance. Creating the plan does not change the ledger.
 Execute the second plan at the same eligible close:
 
 ```shell
-mise run py-fund-manager -- broker historical rebalance-plan-2020-03-13.json \
+mise py-fund-manager -- broker historical rebalance-plan-2020-03-13.json \
   --as-of 2020-03-13T14:00:00-07:00 \
   > executions-2020-03-13.json
 ```
@@ -281,8 +272,7 @@ mise run py-fund-manager -- broker historical rebalance-plan-2020-03-13.json \
 Import the confirmed fills:
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio import playground executions-2020-03-13.json
+mise py-fund-manager -- portfolio import playground executions-2020-03-13.json
 ```
 
 Expected outcome: the import preserves
@@ -311,8 +301,7 @@ That exact file is already committed as
 generation command does not need to be run. Import the committed fixture:
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio import playground tests/data/activity-2020-06-15.csv
+mise py-fund-manager -- portfolio import playground tests/data/activity-2020-06-15.csv
 ```
 
 Expected outcome: the command imports one event from the committed
@@ -325,8 +314,7 @@ event, so the cash exists in the ledger before rebalancing.
 Generate the deposit-funded rebalance at the 2020-06-15 close:
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio rebalance playground --as-of 2020-06-15T14:00:00-07:00 \
+mise py-fund-manager -- portfolio rebalance playground --as-of 2020-06-15T14:00:00-07:00 \
   > rebalance-plan-2020-06-15.json
 ```
 
@@ -337,8 +325,7 @@ adjustment intents and does not modify the ledger.
 Execute the plan at the same eligible close:
 
 ```shell
-mise run py-fund-manager -- \
-  broker historical rebalance-plan-2020-06-15.json \
+mise py-fund-manager -- broker historical rebalance-plan-2020-06-15.json \
   --as-of 2020-06-15T14:00:00-07:00 \
   > executions-2020-06-15.json
 ```
@@ -354,8 +341,7 @@ step 10 imports them.
 Import the confirmed fills:
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio import playground executions-2020-06-15.json
+mise py-fund-manager -- portfolio import playground executions-2020-06-15.json
 ```
 
 Expected outcome: the import preserves
@@ -374,8 +360,7 @@ then imports all seven fills and checks the final positions and residual cash in
 Generate a plan that reserves USD 1,000 for transfer out of the portfolio:
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio rebalance playground \
+mise py-fund-manager -- portfolio rebalance playground \
   --as-of 2020-09-01T14:00:00-07:00 \
   --withdraw 1000.00 \
   > rebalance-plan-2020-09-01.json
@@ -392,8 +377,7 @@ Planning neither changes the ledger nor moves money.
 Execute the reviewed plan at the next trading day's historical close:
 
 ```shell
-mise run py-fund-manager -- \
-  broker historical rebalance-plan-2020-09-01.json \
+mise py-fund-manager -- broker historical rebalance-plan-2020-09-01.json \
   --as-of 2020-09-02T14:00:00-07:00 \
   > executions-2020-09-02.json
 ```
@@ -409,8 +393,7 @@ fills but does not modify `portfolio/playground/transactions.csv`.
 Import the confirmed fills into the portfolio ledger:
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio import playground executions-2020-09-02.json
+mise py-fund-manager -- portfolio import playground executions-2020-09-02.json
 ```
 
 Expected outcome: `executions-2020-09-02.json` is preserved below
@@ -434,8 +417,7 @@ That exact file is already committed as
 generation command does not need to be run. Import the committed fixture:
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio import playground tests/data/activity-2020-09-03.csv
+mise py-fund-manager -- portfolio import playground tests/data/activity-2020-09-03.csv
 ```
 
 Expected outcome: the command imports one event from the committed

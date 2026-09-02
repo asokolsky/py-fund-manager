@@ -3,7 +3,7 @@
 Run the CLI through the repo's `mise` environment:
 
 ```shell
-mise run py-fund-manager -- COMMAND [OPTIONS]
+mise py-fund-manager -- COMMAND [OPTIONS]
 ```
 
 Available commands:
@@ -20,7 +20,7 @@ Available commands:
   manifests; portfolio strategy operations inspect and change effective
   assignments.
 
-Use `mise run py-fund-manager -- --help` for the current command list.
+Use `mise py-fund-manager -- --help` for the current command list.
 
 See the [validate command guide](cli-validate.md) for complete data-root checks,
 output, exit statuses, and side-effect guarantees.
@@ -31,13 +31,13 @@ configuration](data.md#data-root-configuration).
 Show the installed version:
 
 ```shell
-mise run py-fund-manager -- --version
+mise py-fund-manager -- --version
 ```
 
 ## Help output
 
 ```shell
-mise run py-fund-manager -- -h
+mise py-fund-manager -- -h
 ```
 
 ```text
