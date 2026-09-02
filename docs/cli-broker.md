@@ -51,5 +51,26 @@ mise run py-fund-manager -- \
 
 The command reloads the portfolio and ledger named by the plan, verifies that
 the plan still matches current state and the price-availability boundary, and
-validates complete fills and resulting balances. Import the reviewed execution
-JSON with the [portfolio command](cli-portfolio.md#import-broker-activity-or-executions).
+adapts each planned order to the historical broker's supported precision before
+validating complete fills and resulting balances.
+
+The historical broker defaults to E*TRADE-style share quantities: at most three
+digits after the decimal point. It rounds planned quantities down to the nearest
+`0.001` share so a buy cannot exceed its planned allocation. Sells round up to
+fund their planned amount, capped at the available holding rounded down to the
+supported increment; an exact
+full-liquidation order preserves the remaining quantity even when it has more
+than three decimal places. The library adapter accepts another nonnegative
+`quantity_precision` when simulating a different broker; for example, `4` uses a
+`0.0001`-share increment. A positive planned quantity or available holding that
+rounds to zero is omitted. A sub-increment holding is therefore sellable only by
+an exact full-liquidation order. The command reports an omission on standard
+error while keeping execution JSON on standard output valid.
+
+Execution prices are rounded half up to `0.01` for prices at or above `1.00` and
+to `0.0001` for prices below `1.00`. Quantity rounding can leave more residual
+cash than the six-decimal rebalance plan estimated. The simulation does not yet
+model E*TRADE's eligible-security rules or minimum fractional-order notional.
+
+Import the reviewed execution JSON with the [portfolio
+command](cli-portfolio.md#import-broker-activity-or-executions).

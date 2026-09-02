@@ -5,7 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC
 from decimal import Decimal
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from py_fund_manager.portfolio import execution_transaction, validate_transaction_ledger
 from py_fund_manager.rebalance import derive_portfolio_state
@@ -20,8 +23,20 @@ from py_fund_manager.schemas import (
 )
 
 
+@dataclass(frozen=True)
+class SkippedOrder:
+    """A planned broker order omitted during adapter preparation."""
+
+    order: BrokerOrder
+    reason: str
+
+
 class Broker(Protocol):
     """Fulfill normalized orders without owning portfolio ledger concerns."""
+
+    def prepare_order(self, order: BrokerOrder) -> BrokerOrder | SkippedOrder:
+        """Adapt a planned order to the broker's supported order contract."""
+        ...
 
     def execute_order(self, order: BrokerOrder) -> tuple[Execution, ...]:
         """Submit one order and return its confirmed fills."""
@@ -35,6 +50,7 @@ class RebalanceExecutionResult:
     orders: tuple[BrokerOrder, ...]
     executions: tuple[Execution, ...]
     transactions: tuple[Transaction, ...]
+    skipped_orders: tuple[SkippedOrder, ...]
 
 
 def execute_rebalance_plan(
@@ -42,13 +58,21 @@ def execute_rebalance_plan(
     portfolio: Portfolio,
     transactions: list[Transaction] | tuple[Transaction, ...],
     plan: RebalancePlan,
+    on_order_skipped: Callable[[SkippedOrder], None] | None = None,
 ) -> RebalanceExecutionResult:
     """Validate and execute a reviewed plan through any conforming broker."""
     positions = _validate_plan_inputs(portfolio, transactions, plan)
-    orders = tuple(
-        _broker_order(plan, planned_order, index)
-        for index, planned_order in enumerate(plan.orders, start=1)
-    )
+    orders: list[BrokerOrder] = []
+    skipped_orders: list[SkippedOrder] = []
+    for index, planned_order in enumerate(plan.orders, start=1):
+        order = _broker_order(plan, planned_order, index)
+        prepared_order = broker.prepare_order(order)
+        if isinstance(prepared_order, SkippedOrder):
+            skipped_orders.append(prepared_order)
+            if on_order_skipped is not None:
+                on_order_skipped(prepared_order)
+        else:
+            orders.append(prepared_order)
     executions: list[Execution] = []
     for order in orders:
         fills = broker.execute_order(order)
@@ -71,7 +95,12 @@ def execute_rebalance_plan(
         )
         raise ValueError(msg)
     _validate_expected_positions(positions, executions, final_positions)
-    return RebalanceExecutionResult(orders, tuple(executions), tuple(facts))
+    return RebalanceExecutionResult(
+        tuple(orders),
+        tuple(executions),
+        tuple(facts),
+        tuple(skipped_orders),
+    )
 
 
 def _validate_plan_inputs(
@@ -129,6 +158,12 @@ def _broker_order(
         ticker=order.ticker,
         side=order.side,
         quantity=order.quantity,
+        maximum_quantity=(
+            order.current_quantity if order.side == OrderSide.SELL else None
+        ),
+        close_position=(
+            order.side == OrderSide.SELL and order.quantity == order.current_quantity
+        ),
         currency=plan.valuation.currency,
         submitted_at=plan.valuation.as_of,
     )

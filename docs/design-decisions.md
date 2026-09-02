@@ -93,11 +93,17 @@ conflicting latest observations are validation failures.
 
 ## Broker adapters use structural contracts
 
-The `Broker` protocol exposes one operation: fulfill a normalized `BrokerOrder`
-and return confirmed `Execution` records. `HistoricalBroker` satisfies that
-contract by selecting the latest eligible observation from the historical price
-cache at its configured execution time. Future live adapters can satisfy the
-same contract through external APIs without inheriting simulation state.
+The `Broker` protocol adapts a planned `BrokerOrder` to broker-supported values,
+then fulfills it and returns confirmed `Execution` records. `HistoricalBroker`
+defaults to E*TRADE-compatible three-decimal share quantities. Buys round down
+to avoid exceeding their planned allocation; sells round up and are capped at
+the available holding rounded down to the supported increment. Exact
+full-liquidation quantities are preserved, and sub-increment orders or holdings
+are omitted and reported. Quantity precision is configurable for simulating
+another broker. It fills the adapted order using the
+latest eligible observation from the historical price cache at its configured
+execution time. Future live adapters can satisfy the same contract through
+external APIs without inheriting simulation state.
 
 Plan validation, order normalization, fill validation, and execution-to-ledger
 mapping remain shared application services. The current synchronous workflow

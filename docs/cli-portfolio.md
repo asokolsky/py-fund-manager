@@ -261,10 +261,13 @@ See the [broker CLI guide](cli-broker.md) for execution behavior.
 
 The broker command loads the portfolio named by the plan and its current ledger.
 Before submitting orders, it verifies that the plan still matches the portfolio,
-cash, holdings, and price-availability boundary. It then validates complete fills,
-nonnegative resulting cash, and resulting positions. Confirmed executions are
-written as JSON but are not appended automatically; convert them to the canonical
-activity CSV and import that file after review.
+cash, holdings, and price-availability boundary. The historical adapter then
+adapts each planned quantity to its configured precision—three decimal places by
+default—and applies the execution-price increments documented in the
+[broker CLI guide](cli-broker.md#historical-execution). It then validates
+complete fills, nonnegative resulting cash, and resulting positions. Confirmed
+executions are written as JSON but are not appended automatically; import that
+JSON file after review.
 
 A plan containing `--withdraw` can be executed: its sell orders raise the
 reserved cash, and execution fails unless the confirmed fills leave at least the

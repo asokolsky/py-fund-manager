@@ -17,7 +17,7 @@ from pathlib import Path
 import yaml
 
 from . import __version__
-from .broker import execute_rebalance_plan
+from .broker import SkippedOrder, execute_rebalance_plan
 from .config import ConfigurationError, configured_data_root
 from .download import Interval, download, inclusive_year_range, tickers_argument
 from .historical_broker import HistoricalBroker
@@ -57,8 +57,6 @@ epilog = """Examples:
     python -m py_fund_manager portfolio import brokerage activity.csv
     python -m py_fund_manager portfolio strategy brokerage show
 """
-
-log: logging.Logger | None = None
 
 
 def data_directory() -> Path:
@@ -206,120 +204,180 @@ def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuse
         return 0
 
     level = logging.DEBUG if args.verbose else logging.INFO
-    global log
-    log = setup_logging(__name__, level)
+    logger = setup_logging(__name__, level)
 
     if args.command == 'download':
-        return download(args.tickers, args.years, args.interval)
+        return _download_command(args, logger)
     if args.command == 'validate':
-        try:
-            summary = validate_data_root(data_directory())
-        except (ConfigurationError, OSError, TypeError, ValueError) as error:
-            log.log(logging.ERROR, '%s', error)
-            return 1
-        print(summary.message())
-        return 0
+        return _validate_command(logger)
     if args.command == 'broker':
-        try:
-            directory = data_directory()
-            plan = load_rebalance_plan(args.plan_file)
-            portfolio_directory = directory / 'portfolio' / plan.portfolio_id
-            _, portfolio = find_manifest(
-                portfolio_directory,
-                'Portfolio',
-                expected_name=plan.portfolio_id,
-            )
-            transactions = load_transactions(portfolio_directory / 'transactions.csv')
-            broker = HistoricalBroker(args.as_of)
-            result = execute_rebalance_plan(
-                broker,
-                portfolio,
-                transactions,
-                plan,
-            )
-        except (OSError, TypeError, ValueError) as error:
-            log.log(logging.ERROR, '%s', error)
-            return 1
-        print(
-            '['
-            + ','.join(execution.model_dump_json() for execution in result.executions)
-            + ']'
-        )
-        return 0
+        return _broker_command(args, logger)
     if args.command == 'strategy':
-        try:
-            strategy = load_strategy(args.strategy_file)
-        except (OSError, TypeError, ValueError) as error:
-            log.log(logging.ERROR, '%s', error)
-            return 1
-        if args.strategy_command == 'tickers':
-            print(','.join(strategy_tickers(strategy)))
-        else:
-            print(
-                yaml.safe_dump(
-                    analyze_strategy(strategy).model_dump(mode='json'),
-                    sort_keys=False,
-                    explicit_end=False,
-                ),
-                end='',
-            )
-        return 0
+        return _standalone_strategy_command(args, logger)
     if args.command == 'portfolio':
-        try:
-            directory = data_directory()
-            if args.portfolio_command == 'create':
-                if args.as_of is not None and args.balance is None:
-                    create_parser.error('--as-of requires --balance')
-                portfolio_directory = create_portfolio(
-                    directory,
-                    args.portfolio_id,
-                    broker=args.broker,
-                    account_id=args.account_id,
-                )
-                balance_message: str | None = None
-                try:
-                    if isinstance(args.balance, Path):
-                        imported = import_opening_snapshot(
-                            portfolio_directory,
-                            args.balance,
-                            occurred_at=args.as_of,
-                        )
-                        balance_message = (
-                            f'Imported {imported} opening facts from {args.balance}'
-                        )
-                    elif args.balance is not None:
-                        initialized = initialize_opening_balances(
-                            portfolio_directory,
-                            args.balance,
-                            occurred_at=args.as_of,
-                        )
-                        balance_message = f'Initialized {initialized} opening balances'
-                except OSError, TypeError, ValueError:
-                    _rollback_portfolio_creation(portfolio_directory)
-                    raise
-                print(f'Created portfolio {args.portfolio_id} in {portfolio_directory}')
-                if balance_message is not None:
-                    print(balance_message)
-            elif args.portfolio_command == 'import':
-                import_result = import_activity(
-                    directory / 'portfolio' / args.portfolio_id,
-                    args.source_file,
-                )
-                print(
-                    f'Imported {import_result.imported} activity events from '
-                    f'{args.source_file}; skipped {import_result.skipped}'
-                )
-            elif args.portfolio_command == 'strategy':
-                return _strategy_command(directory, args.portfolio_id, args)
-            else:
-                return _rebalance_command(directory, args.portfolio_id, args)
-        except (ConfigurationError, OSError, TypeError, ValueError) as error:
-            log.log(logging.ERROR, '%s', error)
-            return 1
-        return 0
+        return _portfolio_command(args, create_parser, logger)
 
     parser.print_help()
     return 0
+
+
+def _download_command(args: Namespace, logger: logging.Logger) -> int:
+    """Download prices using validated command-line arguments."""
+    try:
+        return download(args.tickers, args.years, args.interval)
+    except (OSError, TypeError, ValueError) as error:
+        logger.log(logging.ERROR, '%s', error)
+        return 1
+
+
+def _validate_command(logger: logging.Logger) -> int:
+    """Validate the configured data root and print its summary."""
+    try:
+        summary = validate_data_root(data_directory())
+    except (ConfigurationError, OSError, TypeError, ValueError) as error:
+        logger.log(logging.ERROR, '%s', error)
+        return 1
+    print(summary.message())
+    return 0
+
+
+def _broker_command(args: Namespace, logger: logging.Logger) -> int:
+    """Execute a reviewed plan through the selected broker adapter."""
+    try:
+        directory = data_directory()
+        plan = load_rebalance_plan(args.plan_file)
+        portfolio_directory = directory / 'portfolio' / plan.portfolio_id
+        _, portfolio = find_manifest(
+            portfolio_directory,
+            'Portfolio',
+            expected_name=plan.portfolio_id,
+        )
+        transactions = load_transactions(portfolio_directory / 'transactions.csv')
+        broker = HistoricalBroker(args.as_of)
+        result = execute_rebalance_plan(
+            broker,
+            portfolio,
+            transactions,
+            plan,
+            on_order_skipped=lambda skipped: _report_skipped_order(logger, skipped),
+        )
+    except (OSError, TypeError, ValueError) as error:
+        logger.log(logging.ERROR, '%s', error)
+        return 1
+    print(
+        json.dumps(
+            [execution.model_dump(mode='json') for execution in result.executions],
+            indent=2,
+        )
+    )
+    return 0
+
+
+def _report_skipped_order(
+    logger: logging.Logger,
+    skipped: SkippedOrder,
+) -> None:
+    """Report one broker-adapter omission without corrupting command output."""
+    logger.log(
+        logging.WARNING,
+        'Skipped %s order %s: omitted by broker adapter: %s',
+        skipped.order.ticker,
+        skipped.order.id,
+        skipped.reason,
+    )
+
+
+def _standalone_strategy_command(args: Namespace, logger: logging.Logger) -> int:
+    """Inspect a standalone strategy manifest."""
+    try:
+        strategy = load_strategy(args.strategy_file)
+    except (OSError, TypeError, ValueError) as error:
+        logger.log(logging.ERROR, '%s', error)
+        return 1
+    if args.strategy_command == 'tickers':
+        print(','.join(strategy_tickers(strategy)))
+    else:
+        print(
+            yaml.safe_dump(
+                analyze_strategy(strategy).model_dump(mode='json'),
+                sort_keys=False,
+                explicit_end=False,
+            ),
+            end='',
+        )
+    return 0
+
+
+def _portfolio_command(
+    args: Namespace,
+    create_parser: ArgumentParser,
+    logger: logging.Logger,
+) -> int:
+    """Create or operate on a portfolio resource."""
+    try:
+        directory = data_directory()
+        if args.portfolio_command == 'create':
+            _create_portfolio_command(directory, args, create_parser)
+        elif args.portfolio_command == 'import':
+            _import_portfolio_command(directory, args)
+        elif args.portfolio_command == 'strategy':
+            return _strategy_command(directory, args.portfolio_id, args)
+        else:
+            return _rebalance_command(directory, args.portfolio_id, args)
+    except (ConfigurationError, OSError, TypeError, ValueError) as error:
+        logger.log(logging.ERROR, '%s', error)
+        return 1
+    return 0
+
+
+def _create_portfolio_command(
+    directory: Path,
+    args: Namespace,
+    create_parser: ArgumentParser,
+) -> None:
+    """Create a portfolio and any requested opening balances."""
+    if args.as_of is not None and args.balance is None:
+        create_parser.error('--as-of requires --balance')
+    portfolio_directory = create_portfolio(
+        directory,
+        args.portfolio_id,
+        broker=args.broker,
+        account_id=args.account_id,
+    )
+    balance_message: str | None = None
+    try:
+        if isinstance(args.balance, Path):
+            imported = import_opening_snapshot(
+                portfolio_directory,
+                args.balance,
+                occurred_at=args.as_of,
+            )
+            balance_message = f'Imported {imported} opening facts from {args.balance}'
+        elif args.balance is not None:
+            initialized = initialize_opening_balances(
+                portfolio_directory,
+                args.balance,
+                occurred_at=args.as_of,
+            )
+            balance_message = f'Initialized {initialized} opening balances'
+    except OSError, TypeError, ValueError:
+        _rollback_portfolio_creation(portfolio_directory)
+        raise
+    print(f'Created portfolio {args.portfolio_id} in {portfolio_directory}')
+    if balance_message is not None:
+        print(balance_message)
+
+
+def _import_portfolio_command(directory: Path, args: Namespace) -> None:
+    """Import confirmed activity into a portfolio ledger."""
+    import_result = import_activity(
+        directory / 'portfolio' / args.portfolio_id,
+        args.source_file,
+    )
+    print(
+        f'Imported {import_result.imported} activity events from '
+        f'{args.source_file}; skipped {import_result.skipped}'
+    )
 
 
 def load_rebalance_plan(path: Path) -> RebalancePlan:

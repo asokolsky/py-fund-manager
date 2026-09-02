@@ -186,15 +186,18 @@ Expected outcome: `executions-2020-01-03.json` is created in the current
 directory as an array containing one complete fill per order. The first fill has
 ID `playground-20200103T150000000000Z-0001-fill-0001`, its execution time is
 `2020-01-03T13:00:00-08:00`, and its price is the eligible AAPL close at that
-time. The command loads the portfolio and its transaction ledger, confirms that
-the plan still matches that ledger, validates every fill, and rejects an
-execution that would derive negative cash or incorrect positions. It prints
-confirmed executions but does not append them to the ledger.
+time rounded to the historical broker's supported cent increment. Its quantity
+is rounded down to E*TRADE-style `0.001`-share precision. The command loads the
+portfolio and its transaction ledger, confirms that the plan still matches that
+ledger, validates every fill, and rejects an execution that would derive negative
+cash or incorrect positions. It prints confirmed executions but does not append
+them to the ledger.
 
 Planning used the AAPL close of `75.0875015258789` from 2020-01-02. The
 historical broker independently loads the latest price available at execution
 and fills the order at the different 2020-01-03 close of
-`74.35749816894531`. The regression requires every first-rebalance execution
+`74.35749816894531`, normalized to the executable price `74.36`. The regression
+requires every first-rebalance execution
 price to differ from its planning price in
 [`playground_test.py`](../../../tests/playground_test.py). The
 interactive command is covered in
@@ -285,8 +288,8 @@ mise run py-fund-manager -- \
 Expected outcome: the import preserves
 `portfolio/playground/imports/executions-2020-03-13.json` and appends seven
 confirmed fills to `portfolio/playground/transactions.csv`. The portfolio still
-holds all seven strategy securities and retains nonnegative residual cash below
-one cent.
+holds all seven strategy securities and retains nonnegative residual cash within
+the bound caused by rounding each buy down by less than `0.001` share.
 
 The regression verifies the second plan, imports all historical fills, and checks
 the resulting positions and cash in
@@ -358,8 +361,8 @@ mise run py-fund-manager -- \
 Expected outcome: the import preserves
 `portfolio/playground/imports/executions-2020-06-15.json` and appends seven
 confirmed fills to `portfolio/playground/transactions.csv`. The final portfolio
-holds all seven strategy securities and retains nonnegative residual cash below
-one cent.
+holds all seven strategy securities and retains nonnegative residual cash within
+the bound caused by rounding each buy down by less than `0.001` share.
 
 The regression imports the USD 5,000 deposit, verifies the exact cash
 increase, generates and executes the third plan without changing the ledger,

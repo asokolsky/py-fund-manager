@@ -377,6 +377,8 @@ class BrokerOrder(BaseModel):
     ticker: str = Field(min_length=1, pattern=TICKER_PATTERN)
     side: OrderSide
     quantity: Decimal = Field(gt=0)
+    maximum_quantity: Decimal | None = Field(default=None, gt=0)
+    close_position: bool = False
     currency: str = Field(min_length=3, max_length=3)
     submitted_at: datetime
 

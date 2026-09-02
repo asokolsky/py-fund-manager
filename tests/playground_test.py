@@ -255,7 +255,18 @@ class TestPlayground(unittest.TestCase):
         self.assertEqual(second_execution_import.imported, 7)
         self.assertEqual(set(positions_after_second), set(strategy.target_weights))
         self.assertGreaterEqual(cash_after_second, Decimal(0))
-        self.assertLess(cash_after_second, Decimal('0.01'))
+        self.assertLess(
+            cash_after_second,
+            second_plan.summary.estimated_ending_cash
+            + sum(
+                (
+                    execution.price * Decimal('0.001')
+                    for execution in second_result.executions
+                    if execution.side == OrderSide.BUY
+                ),
+                Decimal(0),
+            ),
+        )
         self.assertEqual(contribution_import.imported, 1)
         self.assertEqual(cash_before_third, cash_after_second + Decimal(5000))
         self.assertEqual(len(third_result.executions), 7)
@@ -275,7 +286,18 @@ class TestPlayground(unittest.TestCase):
         )
         self.assertEqual(set(final_positions), set(strategy.target_weights))
         self.assertGreaterEqual(final_cash, Decimal(0))
-        self.assertLess(final_cash, Decimal('0.01'))
+        self.assertLess(
+            final_cash,
+            third_plan.summary.estimated_ending_cash
+            + sum(
+                (
+                    execution.price * Decimal('0.001')
+                    for execution in third_result.executions
+                    if execution.side == OrderSide.BUY
+                ),
+                Decimal(0),
+            ),
+        )
         self.assertEqual(withdrawal_plan.valuation.withdrawal, Decimal('1000.00'))
         self.assertTrue(withdrawal_plan.orders)
         self.assertTrue(

@@ -50,9 +50,15 @@ historical simulations.
 
 A broker adapter does not own the portfolio ledger or decide how executions are
 persisted. Shared execution services validate a reviewed plan against current
-ledger state, normalize its orders, validate complete fills, and map those fills
-into transaction facts. Historical and live adapters can therefore share
-accounting rules without inheriting provider-specific state or behavior.
+ledger state, ask the adapter to normalize its orders to broker-supported values,
+validate complete fills, and map those fills into transaction facts. The
+historical adapter defaults to E*TRADE-style `0.001`-share order increments, while
+allowing another quantity precision to be configured. It rounds buys down,
+rounds sells up without exceeding the holding rounded down to the supported
+increment, preserves exact full-liquidation quantities, and omits orders or
+holdings below one supported increment. Historical and live
+adapters can therefore share accounting rules while retaining provider-specific
+order constraints.
 
 ## Position, holding, and tax lot
 

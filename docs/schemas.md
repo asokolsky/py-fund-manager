@@ -236,3 +236,10 @@ plus exact execution arithmetic, price availability, and source provenance. Each
 estimated notional equals rounded quantity multiplied by estimated price. Summary
 amounts reconcile to the order notionals, preserving residual cash from
 fractional-quantity rounding. Consumers must reject unsupported versions.
+
+Plan quantities express the planner's six-decimal intent, not a promise that
+every broker accepts that precision. Before execution, the broker adapter returns
+a normalized `BrokerOrder`. The historical adapter defaults to three decimal
+places, rounding buys down and sells up while preserving exact liquidation
+quantities. The resulting `Execution.quantity` and cash residual can therefore
+differ from the plan.

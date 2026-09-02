@@ -206,7 +206,7 @@ Each array item must match the strict `Execution` schema:
     "order_id": "brokerage-order-1",
     "ticker": "AAPL",
     "side": "buy",
-    "quantity": "2",
+    "quantity": "2.000",
     "price": "220.00",
     "fees": "0.00",
     "currency": "USD",
@@ -220,3 +220,7 @@ The importer maps `buy` and `sell` executions to ledger transactions. Execution
 checks as activity CSV. The execution currency must equal the portfolio base
 currency, and the array must not be empty. Array items may follow broker order;
 the importer writes their ledger transactions chronologically by execution time.
+Quantities and prices are imported exactly as confirmed by the broker adapter.
+For `broker historical`, this normally means three-decimal share quantities,
+with exact remaining quantities preserved for full liquidations. Prices use
+cents at or above `1.00` and four decimal places below `1.00`.

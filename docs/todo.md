@@ -38,8 +38,9 @@ unimplemented. Items stay here until they are addressed.
 ## Supporting design and validation
 
 - **TODO: Rebalance controls.** Define minimum order amounts, weight-drift
-  tolerances, configurable quantity increments, and a cash-flows-only mode that
-  directs confirmed deposits toward underweight holdings without selling.
+  tolerances, configurable planner quantity increments, and a cash-flows-only
+  mode that directs confirmed deposits toward underweight holdings without
+  selling.
 - **TODO: Rebalance plan provenance.** Add a deterministic plan ID, ledger and
   price-input fingerprints, and an expiration time so changed inputs or stale
   valuations cannot be submitted accidentally.

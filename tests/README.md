@@ -45,7 +45,8 @@ mise exec -- uv run -m unittest -v \
   three equal-weight Mag7 rebalances around a dividend and a confirmed USD 5,000
   deposit, then sells enough on the next trading day to fund and record a
   confirmed USD 1,000 withdrawal. It executes each plan through the generic
-  broker contract at deterministic historical prices. See the
+  broker contract—including broker-specific order normalization and price
+  precision—at deterministic historical prices. See the
   [Playground portfolio regression](../sample-data/portfolio/playground/README.md)
   for its inputs, lifecycle, scope, and focused test command.
 - `strategy_test.py` covers immutable strategy revisions and effective assignment

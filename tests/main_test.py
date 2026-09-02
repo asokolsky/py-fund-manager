@@ -1,6 +1,7 @@
 """Tests for the py_fund_manager command-line entry point."""
 
 import io
+import json
 import os
 import re
 import shlex
@@ -10,11 +11,13 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import UTC, datetime
 from decimal import Decimal
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 from py_fund_manager import __main__ as cli
+from py_fund_manager import broker as broker_service
 from py_fund_manager.download import Interval
 from py_fund_manager.schemas import (
+    BrokerOrder,
     Execution,
     OrderSide,
     StrategyAssignment,
@@ -165,6 +168,22 @@ class TestCLI(unittest.TestCase):
             {'AAPL', 'MSFT'}, (2025, 2025), Interval.HOURLY
         )
 
+    def test_download_reports_expected_errors(self) -> None:
+        """Return a failure status when downloading raises an expected error."""
+        arguments = [
+            cli.CLI_NAME,
+            'download',
+            '2025',
+            '--tickers=AAPL',
+        ]
+        with (
+            patch.object(sys, 'argv', arguments),
+            patch.object(cli, 'download', side_effect=ValueError('download failed')),
+        ):
+            result = cli.main()
+
+        self.assertEqual(result, 1)
+
     def test_historical_broker_executes_validated_plan(self) -> None:
         """Execute a plan against its portfolio ledger and print fills as JSON."""
         executed_at = datetime(2020, 1, 3, 21, tzinfo=UTC)
@@ -187,7 +206,8 @@ class TestCLI(unittest.TestCase):
             portfolio = Mock()
             transactions = [Mock()]
             broker = Mock()
-            execution_result = Mock(executions=(execution,))
+            broker.prepare_order.side_effect = lambda order: order
+            execution_result = Mock(executions=(execution,), skipped_orders=())
             arguments = [
                 cli.CLI_NAME,
                 'broker',
@@ -226,8 +246,226 @@ class TestCLI(unittest.TestCase):
         load_transactions.assert_called_once_with(
             data_root / 'portfolio/playground/transactions.csv'
         )
-        execute.assert_called_once_with(broker, portfolio, transactions, plan)
-        self.assertIn('74.35749816894531', stdout.getvalue())
+        execute.assert_called_once_with(
+            broker,
+            portfolio,
+            transactions,
+            plan,
+            on_order_skipped=ANY,
+        )
+        self.assertEqual(
+            stdout.getvalue(),
+            json.dumps([execution.model_dump(mode='json')], indent=2) + '\n',
+        )
+
+    def test_historical_broker_rounds_execution_prices_to_market_precision(
+        self,
+    ) -> None:
+        """Round standard and sub-dollar fills to their market increments."""
+        executed_at = datetime(2020, 1, 3, 21, tzinfo=UTC)
+        broker = cli.HistoricalBroker(executed_at)
+        order = BrokerOrder(
+            id='order-1',
+            ticker='AAPL',
+            side=OrderSide.BUY,
+            quantity=Decimal(1),
+            currency='USD',
+            submitted_at=executed_at,
+        )
+
+        for raw_price, expected_price in (
+            (Decimal('74.355'), Decimal('74.36')),
+            (Decimal('0.12345'), Decimal('0.1235')),
+        ):
+            with (
+                self.subTest(raw_price=raw_price),
+                patch(
+                    'py_fund_manager.historical_broker.load_latest_daily_prices',
+                    return_value={'AAPL': Mock(price=raw_price)},
+                ),
+            ):
+                execution = broker.execute_order(order)[0]
+
+            self.assertEqual(execution.price, expected_price)
+
+    def test_historical_broker_defaults_to_etrade_quantity_precision(self) -> None:
+        """Round planned quantities down to E*TRADE's three-decimal precision."""
+        executed_at = datetime(2020, 1, 3, 21, tzinfo=UTC)
+        order = BrokerOrder(
+            id='order-1',
+            ticker='AAPL',
+            side=OrderSide.BUY,
+            quantity=Decimal('1.1239'),
+            currency='USD',
+            submitted_at=executed_at,
+        )
+
+        prepared = cli.HistoricalBroker(executed_at).prepare_order(order)
+
+        self.assertIsInstance(prepared, BrokerOrder)
+        assert isinstance(prepared, BrokerOrder)
+        self.assertEqual(prepared.quantity, Decimal('1.123'))
+
+    def test_historical_broker_quantity_precision_is_configurable(self) -> None:
+        """Support another broker's share-quantity precision when configured."""
+        executed_at = datetime(2020, 1, 3, 21, tzinfo=UTC)
+        order = BrokerOrder(
+            id='order-1',
+            ticker='AAPL',
+            side=OrderSide.BUY,
+            quantity=Decimal('1.12349'),
+            currency='USD',
+            submitted_at=executed_at,
+        )
+
+        prepared = cli.HistoricalBroker(
+            executed_at,
+            quantity_precision=4,
+        ).prepare_order(order)
+
+        self.assertIsInstance(prepared, BrokerOrder)
+        assert isinstance(prepared, BrokerOrder)
+        self.assertEqual(prepared.quantity, Decimal('1.1234'))
+
+    def test_historical_broker_adapts_sells_and_omits_dust(self) -> None:
+        """Fund sells, preserve liquidations, and omit unsupported dust."""
+        executed_at = datetime(2020, 1, 3, 21, tzinfo=UTC)
+        broker = cli.HistoricalBroker(executed_at)
+        sell = BrokerOrder(
+            id='order-1',
+            ticker='AAPL',
+            side=OrderSide.SELL,
+            quantity=Decimal('1.1231'),
+            maximum_quantity=Decimal(2),
+            currency='USD',
+            submitted_at=executed_at,
+        )
+        liquidation = BrokerOrder(
+            id='order-2',
+            ticker='AAPL',
+            side=OrderSide.SELL,
+            quantity=Decimal('1.2345'),
+            maximum_quantity=Decimal('1.2345'),
+            close_position=True,
+            currency='USD',
+            submitted_at=executed_at,
+        )
+        dust = BrokerOrder(
+            id='order-3',
+            ticker='AAPL',
+            side=OrderSide.BUY,
+            quantity=Decimal('0.000003'),
+            currency='USD',
+            submitted_at=executed_at,
+        )
+        tiny_holding = BrokerOrder(
+            id='order-5',
+            ticker='AAPL',
+            side=OrderSide.SELL,
+            quantity=Decimal('0.000003'),
+            maximum_quantity=Decimal('0.000004'),
+            currency='USD',
+            submitted_at=executed_at,
+        )
+        capped_sell = BrokerOrder(
+            id='order-4',
+            ticker='AAPL',
+            side=OrderSide.SELL,
+            quantity=Decimal('1.2343'),
+            maximum_quantity=Decimal('1.2345'),
+            currency='USD',
+            submitted_at=executed_at,
+        )
+
+        prepared_sell = broker.prepare_order(sell)
+        prepared_liquidation = broker.prepare_order(liquidation)
+        prepared_capped_sell = broker.prepare_order(capped_sell)
+        skipped_dust = broker.prepare_order(dust)
+        skipped_tiny_holding = broker.prepare_order(tiny_holding)
+
+        self.assertIsInstance(prepared_sell, BrokerOrder)
+        self.assertIsInstance(prepared_liquidation, BrokerOrder)
+        self.assertIsInstance(prepared_capped_sell, BrokerOrder)
+        assert isinstance(prepared_sell, BrokerOrder)
+        assert isinstance(prepared_liquidation, BrokerOrder)
+        assert isinstance(prepared_capped_sell, BrokerOrder)
+        self.assertEqual(prepared_sell.quantity, Decimal('1.124'))
+        self.assertEqual(prepared_liquidation.quantity, Decimal('1.2345'))
+        self.assertEqual(prepared_capped_sell.quantity, Decimal('1.234'))
+        self.assertEqual(prepared_capped_sell.quantity.as_tuple().exponent, -3)
+        self.assertIsInstance(skipped_dust, cli.SkippedOrder)
+        assert isinstance(skipped_dust, cli.SkippedOrder)
+        self.assertIn('cannot be represented', skipped_dust.reason)
+        self.assertIsInstance(skipped_tiny_holding, cli.SkippedOrder)
+        assert isinstance(skipped_tiny_holding, cli.SkippedOrder)
+        self.assertIn('holding 0.000004', skipped_tiny_holding.reason)
+
+    def test_skipped_order_is_reported_before_later_execution_failure(self) -> None:
+        """Report an omission even when final cash validation later fails."""
+        executed_at = datetime(2020, 1, 3, 21, tzinfo=UTC)
+        dust = BrokerOrder(
+            id='order-1',
+            ticker='AAPL',
+            side=OrderSide.BUY,
+            quantity=Decimal('0.000003'),
+            currency='USD',
+            submitted_at=executed_at,
+        )
+        executable = BrokerOrder(
+            id='order-2',
+            ticker='MSFT',
+            side=OrderSide.SELL,
+            quantity=Decimal(1),
+            maximum_quantity=Decimal(2),
+            currency='USD',
+            submitted_at=executed_at,
+        )
+        skipped = cli.SkippedOrder(dust, 'adapter-specific reason')
+        execution = Execution(
+            id='execution-1',
+            order_id=executable.id,
+            ticker=executable.ticker,
+            side=executable.side,
+            quantity=executable.quantity,
+            price=Decimal(1),
+            currency=executable.currency,
+            executed_at=executed_at,
+        )
+        adapter = Mock()
+        adapter.prepare_order.side_effect = (skipped, executable)
+        adapter.execute_order.return_value = (execution,)
+        plan = Mock(
+            orders=(Mock(), Mock()),
+            valuation=Mock(as_of=executed_at, withdrawal=Decimal(10)),
+        )
+        report = Mock()
+        fact = Mock(occurred_at=executed_at)
+
+        with (
+            patch.object(broker_service, '_validate_plan_inputs', return_value={}),
+            patch.object(
+                broker_service,
+                '_broker_order',
+                side_effect=(dust, executable),
+            ),
+            patch.object(broker_service, 'execution_transaction', return_value=fact),
+            patch.object(broker_service, 'validate_transaction_ledger'),
+            patch.object(
+                broker_service,
+                'derive_portfolio_state',
+                return_value=({}, Decimal(0)),
+            ),
+            self.assertRaisesRegex(ValueError, 'insufficient cash'),
+        ):
+            broker_service.execute_rebalance_plan(
+                adapter,
+                Mock(),
+                [],
+                plan,
+                on_order_skipped=report,
+            )
+
+        report.assert_called_once_with(skipped)
 
     def test_show_strategy_and_list_tickers(self) -> None:
         """Summarize a strategy or emit a download-compatible ticker list."""
