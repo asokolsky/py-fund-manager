@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -35,6 +36,7 @@ from py_fund_manager.schemas import (
 
 type Manifest = Portfolio | Strategy | StrategyHistory
 type ManifestKind = Literal['Portfolio', 'Strategy', 'StrategyHistory']
+type ActivityReader = Callable[[Path, Portfolio], list[Transaction]]
 
 
 class StrictSafeLoader(yaml.SafeLoader):
@@ -266,7 +268,12 @@ def initialize_opening_balances(
     return len(transactions)
 
 
-def import_activity(portfolio_directory: Path, source: Path) -> ActivityImportResult:
+def import_activity(
+    portfolio_directory: Path,
+    source: Path,
+    *,
+    reader: ActivityReader | None = None,
+) -> ActivityImportResult:
     """Append CSV activity or JSON executions, skipping identical known events."""
     if not source.is_file():
         msg = f"activity file '{source}' does not exist or is not a file"
@@ -281,7 +288,7 @@ def import_activity(portfolio_directory: Path, source: Path) -> ActivityImportRe
         expected_name=portfolio_directory.name,
     )
     existing = load_transactions(ledger_path)
-    incoming = _read_import(source, portfolio.spec.base_currency)
+    incoming = (reader or _read_import)(source, portfolio)
     known = {
         transaction.external_id: transaction
         for transaction in existing
@@ -640,13 +647,13 @@ def _read_opening_snapshot(
     return transactions
 
 
-def _read_import(source: Path, base_currency: str) -> list[Transaction]:
+def _read_import(source: Path, portfolio: Portfolio) -> list[Transaction]:
     """Read one supported portfolio import format."""
     suffix = source.suffix.lower()
     if suffix == '.csv':
-        return _read_activity_csv(source, base_currency)
+        return _read_activity_csv(source, portfolio.spec.base_currency)
     if suffix == '.json':
-        return _read_execution_json(source, base_currency)
+        return _read_execution_json(source, portfolio.spec.base_currency)
     msg = f'{source}: portfolio imports must use a .csv or .json extension'
     raise ValueError(msg)
 

@@ -44,8 +44,8 @@ run = [
 description = "Lint python sources"
 run = [
     # check imports
-    'uv run ruff check -v --select I py_fund_manager/*.py tests/*.py',
-    'uv run ruff check -v py_fund_manager/*.py tests/*.py sample-data/strategy/SnP500-direct/generate_strategy.py'
+    'uv run ruff check -v --select I py_fund_manager tests',
+    'uv run ruff check -v py_fund_manager tests sample-data/strategy/SnP500-direct/generate_strategy.py'
 ]
 
 [tasks.mypy]
