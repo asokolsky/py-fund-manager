@@ -31,6 +31,8 @@ mise exec -- uv run -m unittest -v \
 
 ## Test modules
 
+- `browser_test.py` covers effective-dated snapshot loading, transaction timestamp
+  discovery and defaults, as-of selection, and Textual master-detail navigation.
 - `config_test.py` covers per-user TOML configuration and data-root resolution.
 - `download_test.py` covers ticker and year parsing, downloads, normalization,
   concurrency, and Parquet storage.
