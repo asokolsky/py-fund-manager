@@ -6,7 +6,7 @@ fills as JSON. It does not append those fills to the portfolio ledger.
 ## Help output
 
 ```shell
-mise run py-fund-manager -- broker -h
+mise py-fund-manager -- broker -h
 ```
 
 ```text
@@ -24,7 +24,7 @@ The historical command identifies the reviewed plan and the explicit execution
 time:
 
 ```shell
-mise run py-fund-manager -- broker historical -h
+mise py-fund-manager -- broker historical -h
 ```
 
 ```text
@@ -43,8 +43,7 @@ options:
 Execute a plan against cached historical prices at an explicit time:
 
 ```shell
-mise run py-fund-manager -- \
-  broker historical rebalance-plan.json \
+mise py-fund-manager -- broker historical rebalance-plan.json \
   --as-of 2026-08-26T14:00:00-07:00 \
   > executions-2026-08-26.json
 ```

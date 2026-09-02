@@ -8,7 +8,7 @@ opening snapshot, and imports ongoing broker activity. See the
 ## Help output
 
 ```shell
-mise run py-fund-manager -- portfolio -h
+mise py-fund-manager -- portfolio -h
 ```
 
 ```text
@@ -31,7 +31,7 @@ The creation command exposes the account identity and optional opening-balance
 inputs:
 
 ```shell
-mise run py-fund-manager -- portfolio create -h
+mise py-fund-manager -- portfolio create -h
 ```
 
 ```text
@@ -59,9 +59,7 @@ options:
 ## Create a portfolio
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio create brokerage \
-  --broker historical \
+mise py-fund-manager -- portfolio create brokerage --broker historical \
   --account-id brokerage-123
 ```
 
@@ -79,9 +77,7 @@ fail before files are written.
 Create the opening ledger directly when the balances are already known:
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio create playground \
-  --broker historical \
+mise py-fund-manager -- portfolio create playground --broker historical \
   --account-id playground \
   --as-of 2020-01-02T08:00:00-08:00 \
   --balance=USD:10000,AMAT:22
@@ -99,9 +95,7 @@ below `imports/`.
 Bootstrap a new portfolio from canonical positions and cash during creation:
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio create brokerage \
-  --broker historical \
+mise py-fund-manager -- portfolio create brokerage --broker historical \
   --account-id brokerage-123 \
   --as-of 2020-01-02T08:00:00-08:00 \
   --balance=@/path/to/private/opening.csv
@@ -120,16 +114,14 @@ are not replaced.
 Append confirmed events after the opening boundary:
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio import brokerage \
+mise py-fund-manager -- portfolio import brokerage \
   /path/to/private/activity-2020-03.csv
 ```
 
 The same command accepts canonical execution JSON produced by a broker command:
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio import brokerage executions-2026-08-26.json
+mise py-fund-manager -- portfolio import brokerage executions-2026-08-26.json
 ```
 
 Every event or execution carries its own timestamp and stable source identity.
@@ -144,15 +136,14 @@ Open the TUI portfolio browser for every discovered portfolio using the latest
 transaction timestamp at or before the current time:
 
 ```shell
-mise run py-fund-manager -- portfolio browse
+mise py-fund-manager -- portfolio browse
 ```
 
 Provide a portfolio ID to open the TUI portfolio browser after valuing only that
 account:
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio browse brokerage --as-of 2026-09-01T09:00:00-07:00
+mise py-fund-manager -- portfolio browse brokerage --as-of 2026-09-01T09:00:00-07:00
 ```
 
 The list shows each portfolio, broker account ID, and total value. Its summary
@@ -178,7 +169,7 @@ Total value is cash plus the sum of position values. Browsing is read-only and
 does not refresh market prices.
 
 ```shell
-mise run py-fund-manager -- portfolio browse -h
+mise py-fund-manager -- portfolio browse -h
 ```
 
 ```text
@@ -207,8 +198,7 @@ modify the transaction ledger.
 Plan a rebalance without adding or removing cash:
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio rebalance brokerage
+mise py-fund-manager -- portfolio rebalance brokerage
 ```
 
 To add money, first record the confirmed deposit in an activity CSV:
@@ -221,11 +211,9 @@ occurred_at,event,asset,amount,external_id
 Import the deposit, then generate a new plan from the updated cash balance:
 
 ```sh
-mise run py-fund-manager -- \
-  portfolio import brokerage deposit.csv
+mise py-fund-manager -- portfolio import brokerage deposit.csv
 
-mise run py-fund-manager -- \
-  portfolio rebalance brokerage
+mise py-fund-manager -- portfolio rebalance brokerage
 ```
 
 Use the transaction time and stable external identifier reported by the account.
@@ -234,8 +222,7 @@ The imported deposit becomes ledger cash before the planner can spend it.
 Plan a USD 5,000 withdrawal and the sales needed to fund it:
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio rebalance brokerage \
+mise py-fund-manager -- portfolio rebalance brokerage \
   --withdraw 5000.00
 ```
 
@@ -247,8 +234,7 @@ Select a historical planning time with an ISO 8601 timestamp containing a
 timezone offset. The default is the current time:
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio rebalance brokerage \
+mise py-fund-manager -- portfolio rebalance brokerage \
   --as-of 2026-08-26T14:00:00-07:00
 ```
 
@@ -301,15 +287,13 @@ The command writes the JSON order plan to standard output so it can be saved and
 reviewed:
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio rebalance brokerage > rebalance-plan.json
+mise py-fund-manager -- portfolio rebalance brokerage > rebalance-plan.json
 ```
 
 Execute a reviewed plan against cached historical prices at an explicit time:
 
 ```shell
-mise run py-fund-manager -- \
-  broker historical rebalance-plan.json \
+mise py-fund-manager -- broker historical rebalance-plan.json \
   --as-of 2026-08-26T14:00:00-07:00 \
   > executions-2026-08-26.json
 ```
@@ -345,4 +329,4 @@ Current and target valuation amounts are rounded to cents. Broker-specific
 whole-share, minimum-order, tax-lot, and limit-price rules remain outside this
 planner.
 
-Run `mise run py-fund-manager -- portfolio --help` for current options.
+Run `mise py-fund-manager -- portfolio --help` for current options.

@@ -117,7 +117,7 @@ class TestCLI(unittest.TestCase):
         docs_directory = cli.Path(__file__).parents[1] / 'docs'
         help_block = re.compile(
             r'```shell\n'
-            r'mise run py-fund-manager -- (?P<arguments>[^\n]+)\n'
+            r'mise py-fund-manager -- (?P<arguments>[^\n]+)\n'
             r'```\n\n'
             r'```text\n'
             r'(?P<output>.*?)'

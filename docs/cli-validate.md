@@ -7,7 +7,7 @@ models, resource discovery, and reference resolution as normal operations.
 ## Help output
 
 ```shell
-mise run py-fund-manager -- validate -h
+mise py-fund-manager -- validate -h
 ```
 
 ```text
@@ -22,7 +22,7 @@ options:
 Configure the [data root](data.md#data-root-configuration), then run:
 
 ```shell
-mise run py-fund-manager -- validate
+mise py-fund-manager -- validate
 ```
 
 A successful run prints a resource summary and exits with status `0`:

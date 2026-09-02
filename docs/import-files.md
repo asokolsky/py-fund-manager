@@ -46,9 +46,7 @@ time. The command supplies that time with `--as-of`; when omitted, the import ti
 is used.
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio create brokerage \
-  --broker historical \
+mise py-fund-manager -- portfolio create brokerage --broker historical \
   --account-id brokerage-123 \
   --as-of 2020-01-02T08:00:00-08:00 \
   --balance=@/path/to/private/opening.csv
@@ -111,8 +109,7 @@ contract.
 An activity CSV updates an existing portfolio after its opening boundary:
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio import brokerage \
+mise py-fund-manager -- portfolio import brokerage \
   /path/to/private/activity-2020-03.csv
 ```
 
@@ -195,8 +192,7 @@ Execution JSON is the canonical array emitted by commands such as
 `broker historical`. Import it directly without converting it to CSV:
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio import brokerage executions-2026-08-26.json
+mise py-fund-manager -- portfolio import brokerage executions-2026-08-26.json
 ```
 
 Each array item must match the strict `Execution` schema:
@@ -232,14 +228,11 @@ cents at or above `1.00` and four decimal places below `1.00`.
 An IBKR portfolio uses the statement account identifier as `account_id`:
 
 ```shell
-mise run py-fund-manager -- \
-  portfolio create brokerage \
-  --broker ibkr \
+mise py-fund-manager -- portfolio create brokerage --broker ibkr \
   --account-id U1234567 \
   --balance=USD:100
 
-mise run py-fund-manager -- \
-  portfolio import brokerage \
+mise py-fund-manager -- portfolio import brokerage \
   /path/to/private/ibkr-monthly-activity.csv
 ```
 
