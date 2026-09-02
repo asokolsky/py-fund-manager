@@ -18,6 +18,7 @@ import yaml
 
 from . import __version__
 from .broker import SkippedOrder, execute_rebalance_plan
+from .browser import browse_portfolios
 from .config import ConfigurationError, configured_data_root
 from .download import Interval, download, inclusive_year_range, tickers_argument
 from .historical_broker import HistoricalBroker
@@ -55,6 +56,7 @@ epilog = """Examples:
     python -m py_fund_manager portfolio create playground --broker historical --account-id playground --as-of 2020-01-02T08:00:00-08:00 --balance=USD:10000,AMAT:22
     python -m py_fund_manager portfolio create brokerage --broker historical --account-id 1234 --balance=@opening.csv
     python -m py_fund_manager portfolio import brokerage activity.csv
+    python -m py_fund_manager portfolio browse
     python -m py_fund_manager portfolio strategy brokerage show
 """
 
@@ -175,6 +177,15 @@ def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuse
     )
     import_parser.add_argument('portfolio_id')
     import_parser.add_argument('source_file', type=Path)
+    browse_parser = portfolio_commands.add_parser(
+        'browse', help='Browse portfolio state in an interactive terminal'
+    )
+    browse_parser.add_argument('portfolio_id', nargs='?')
+    browse_parser.add_argument(
+        '--as-of',
+        type=effective_time,
+        help='Portfolio valuation timestamp (default: latest transaction time)',
+    )
     portfolio_strategy_parser = portfolio_commands.add_parser(
         'strategy', help='Inspect and assign portfolio strategies'
     )
@@ -320,6 +331,12 @@ def _portfolio_command(
             _create_portfolio_command(directory, args, create_parser)
         elif args.portfolio_command == 'import':
             _import_portfolio_command(directory, args)
+        elif args.portfolio_command == 'browse':
+            browse_portfolios(
+                directory,
+                args.portfolio_id,
+                args.as_of,
+            )
         elif args.portfolio_command == 'strategy':
             return _strategy_command(directory, args.portfolio_id, args)
         else:

@@ -12,12 +12,14 @@ mise run py-fund-manager -- portfolio -h
 ```
 
 ```text
-usage: py-fund-manager portfolio [-h] {create,import,strategy,rebalance} ...
+usage: py-fund-manager portfolio [-h]
+                                 {create,import,browse,strategy,rebalance} ...
 
 positional arguments:
-  {create,import,strategy,rebalance}
+  {create,import,browse,strategy,rebalance}
     create              Create a portfolio
     import              Import broker activity or executions
+    browse              Browse portfolio state in an interactive terminal
     strategy            Inspect and assign portfolio strategies
     rebalance           Generate a rebalance plan
 
@@ -135,6 +137,60 @@ Identical facts from overlapping imports are skipped; conflicting reuse of an
 identity fails the import. Dividend reinvestment is recorded as a dividend
 followed by a buy. See the [Import Files reference](import-files.md) for the CSV
 and JSON contracts and append rules.
+
+## Browse portfolios
+
+Open the TUI portfolio browser for every discovered portfolio using the latest
+transaction timestamp at or before the current time:
+
+```shell
+mise run py-fund-manager -- portfolio browse
+```
+
+Provide a portfolio ID to open the TUI portfolio browser after valuing only that
+account:
+
+```shell
+mise run py-fund-manager -- \
+  portfolio browse brokerage --as-of 2026-09-01T09:00:00-07:00
+```
+
+The list shows each portfolio, broker account ID, and total value. Its summary
+pane shows account metadata, cash, positions value, and total value. Press
+`Enter` to open the selected portfolio in a full-window details view; press
+`Backspace` to return to the list, `a` to select an as-of time, and `q` to exit.
+The details table shows each ticker's quantity and value, followed by a separated
+cash row. Total value appears in a separate block below the table. The as-of
+selector uses only the selected portfolio's unique transaction timestamps in
+both list and detail views. Selecting a timestamp revalues the current view
+without changing the selected portfolio. From a scoped view, returning to the
+list loads and values the remaining portfolios on demand.
+
+Omitting `--as-of` uses the latest portfolio transaction timestamp at or before
+the current time. For the all-portfolios view, this is selected from the union
+of transaction timestamps. An explicit value must include a UTC offset. Facts
+after the valuation time are excluded. Position values use the
+latest eligible cached daily close at that time, following the same
+close-availability rules as rebalancing. A missing price prevents the portfolio
+currently being valued from loading; stale prices remain visible with a warning.
+Total value is cash plus the sum of position values. Browsing is read-only and
+does not refresh market prices.
+
+```shell
+mise run py-fund-manager -- portfolio browse -h
+```
+
+```text
+usage: py-fund-manager portfolio browse [-h] [--as-of AS_OF] [portfolio_id]
+
+positional arguments:
+  portfolio_id
+
+options:
+  -h, --help     show this help message and exit
+  --as-of AS_OF  Portfolio valuation timestamp (default: latest transaction
+                 time)
+```
 
 ## Rebalance a portfolio
 

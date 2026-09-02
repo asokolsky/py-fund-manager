@@ -61,6 +61,42 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(result, 1)
         create_mock.assert_not_called()
 
+    def test_portfolio_browse_passes_scope_and_time_to_tui(self) -> None:
+        """Launch the TUI portfolio browser for the requested scope and time."""
+        data_root = cli.Path('/configured-data')
+        as_of = datetime(2026, 9, 1, 16, tzinfo=UTC)
+        arguments = [
+            cli.CLI_NAME,
+            'portfolio',
+            'browse',
+            'brokerage',
+            '--as-of',
+            as_of.isoformat(),
+        ]
+        with (
+            patch.object(sys, 'argv', arguments),
+            patch.object(cli, 'data_directory', return_value=data_root),
+            patch.object(cli, 'browse_portfolios') as browse,
+        ):
+            result = cli.main()
+
+        self.assertEqual(result, 0)
+        browse.assert_called_once_with(data_root, 'brokerage', as_of)
+
+    def test_portfolio_browse_defers_default_timestamp_to_tui(self) -> None:
+        """Let the TUI portfolio browser select an available default timestamp."""
+        data_root = cli.Path('/configured-data')
+        arguments = [cli.CLI_NAME, 'portfolio', 'browse']
+        with (
+            patch.object(sys, 'argv', arguments),
+            patch.object(cli, 'data_directory', return_value=data_root),
+            patch.object(cli, 'browse_portfolios') as browse,
+        ):
+            result = cli.main()
+
+        self.assertEqual(result, 0)
+        browse.assert_called_once_with(data_root, None, None)
+
     def test_version_writes_to_stdout(self) -> None:
         """Print the exact package version to stdout and exit successfully."""
         stdout = io.StringIO()

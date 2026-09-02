@@ -11,7 +11,8 @@ Available commands:
 - [`validate`](cli-validate.md) verifies every discovered manifest, ledger,
   Strategy reference, and immutable revision without writes or network access.
 - [`portfolio`](cli-portfolio.md) creates portfolio metadata and imports opening
-  snapshots and ongoing broker activity.
+  snapshots and ongoing broker activity, and browses effective account state in
+  an interactive terminal.
 - [`download`](cli-download.md) downloads historical market prices.
 - [`broker`](cli-broker.md) executes reviewed rebalance plans and prints
   confirmed fills.
@@ -68,5 +69,6 @@ Examples:
     python -m py_fund_manager portfolio create playground --broker historical --account-id playground --as-of 2020-01-02T08:00:00-08:00 --balance=USD:10000,AMAT:22
     python -m py_fund_manager portfolio create brokerage --broker historical --account-id 1234 --balance=@opening.csv
     python -m py_fund_manager portfolio import brokerage activity.csv
+    python -m py_fund_manager portfolio browse
     python -m py_fund_manager portfolio strategy brokerage show
 ```
