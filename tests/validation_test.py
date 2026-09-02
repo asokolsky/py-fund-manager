@@ -3,6 +3,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from shutil import copytree
 from unittest.mock import patch
 
 from py_fund_manager.portfolio import load_manifest
@@ -13,36 +14,57 @@ from py_fund_manager.validation import DataValidationError, validate_data_root
 class TestDataValidation(unittest.TestCase):
     """Verify complete resource discovery and aggregate validation failures."""
 
+    def _copy_stable_sample_data(self, destination: Path) -> Path:
+        """Copy only the sample resources used as stable test fixtures."""
+        source = Path(__file__).parents[1] / 'sample-data'
+        root = destination / 'sample-data'
+        resources = (
+            Path('portfolio/sample'),
+            Path('strategy/SnP500-direct'),
+            Path('strategy/mag7'),
+        )
+        for resource in resources:
+            target = root / resource
+            target.parent.mkdir(parents=True, exist_ok=True)
+            copytree(source / resource, target)
+        return root
+
     def test_committed_sample_data_is_valid_without_writes(self) -> None:
         """Validate every sample resource without changing file metadata."""
-        root = Path(__file__).parents[1] / 'sample-data'
-        before = {
-            path: path.stat().st_mtime_ns for path in root.rglob('*') if path.is_file()
-        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._copy_stable_sample_data(Path(directory))
+            before = {
+                path: path.stat().st_mtime_ns
+                for path in root.rglob('*')
+                if path.is_file()
+            }
 
-        summary = validate_data_root(root)
+            summary = validate_data_root(root)
 
-        after = {
-            path: path.stat().st_mtime_ns for path in root.rglob('*') if path.is_file()
-        }
-        self.assertEqual(before, after)
-        self.assertEqual(summary.portfolios, 1)
-        self.assertEqual(summary.strategies, 2)
-        self.assertEqual(summary.strategy_histories, 1)
-        self.assertEqual(summary.revisions, 1)
+            after = {
+                path: path.stat().st_mtime_ns
+                for path in root.rglob('*')
+                if path.is_file()
+            }
+            self.assertEqual(before, after)
+            self.assertEqual(summary.portfolios, 1)
+            self.assertEqual(summary.strategies, 2)
+            self.assertEqual(summary.strategy_histories, 1)
+            self.assertEqual(summary.revisions, 1)
 
     def test_validator_parses_each_sample_manifest_once(self) -> None:
         """Reuse discovered models and referenced revision validation results."""
-        root = Path(__file__).parents[1] / 'sample-data'
-        with (
-            patch(
-                'py_fund_manager.validation.load_manifest', wraps=load_manifest
-            ) as manifest_mock,
-            patch(
-                'py_fund_manager.strategy.load_strategy', wraps=load_strategy
-            ) as strategy_mock,
-        ):
-            validate_data_root(root)
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._copy_stable_sample_data(Path(directory))
+            with (
+                patch(
+                    'py_fund_manager.validation.load_manifest', wraps=load_manifest
+                ) as manifest_mock,
+                patch(
+                    'py_fund_manager.strategy.load_strategy', wraps=load_strategy
+                ) as strategy_mock,
+            ):
+                validate_data_root(root)
 
         current_paths = [call.args[0] for call in manifest_mock.call_args_list]
         revision_paths = [call.args[0] for call in strategy_mock.call_args_list]

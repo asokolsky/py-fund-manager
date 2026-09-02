@@ -100,6 +100,7 @@ class TestCLI(unittest.TestCase):
                 stderr = io.StringIO()
                 with (
                     self.subTest(guide=guide.name, arguments=arguments),
+                    patch.dict(os.environ, {'COLUMNS': '80', 'LINES': '24'}),
                     patch.object(sys, 'argv', [cli.CLI_NAME, *arguments]),
                     redirect_stdout(stdout),
                     redirect_stderr(stderr),
