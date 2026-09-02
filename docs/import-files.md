@@ -12,15 +12,17 @@ contract](portfolio-storage-validation.md).
 | Opening snapshot CSV | `portfolio create ID --balance=@FILE` | Establish opening cash and positions at one account boundary. |
 | Activity CSV | `portfolio import ID FILE` | Append independently timestamped broker events. |
 | Execution JSON | `portfolio import ID FILE` | Append confirmed fills emitted by a broker command. |
+| IBKR monthly Activity Statement CSV | `portfolio import ID FILE` | Validate and preserve a native IBKR statement when every activity row can satisfy the ledger contract. |
 
 Portfolio creation also accepts inline opening facts through
 `--balance=ASSET:VALUE,...`. This path writes the canonical transaction ledger
 without importing or preserving a source file; see the
 [portfolio CLI guide](cli-portfolio.md#create-a-portfolio).
 
-Broker-native exports are not accepted directly. They require an adapter that
-produces one of the canonical formats documented here. No broker-specific import
-adapter exists yet.
+Broker-native exports require an adapter that produces canonical transactions.
+The IBKR adapter recognizes monthly Activity Statement CSV files, validates their
+statement and account identity, and fails before writing when a broker row cannot
+supply the canonical timestamp or stable identity.
 
 ## Common behavior
 
@@ -224,3 +226,45 @@ Quantities and prices are imported exactly as confirmed by the broker adapter.
 For `broker historical`, this normally means three-decimal share quantities,
 with exact remaining quantities preserved for full liquidations. Prices use
 cents at or above `1.00` and four decimal places below `1.00`.
+
+## IBKR monthly Activity Statement CSV
+
+An IBKR portfolio uses the statement account identifier as `account_id`:
+
+```shell
+mise run py-fund-manager -- \
+  portfolio create brokerage \
+  --broker ibkr \
+  --account-id U1234567 \
+  --balance=USD:100
+
+mise run py-fund-manager -- \
+  portfolio import brokerage \
+  /path/to/private/ibkr-monthly-activity.csv
+```
+
+The adapter accepts the UTF-8 byte-order mark used by IBKR and parses its
+section-local `Header` and `Data` rows. Sections may be absent in months with no
+corresponding activity. Summary totals, code dictionaries, and legal notes are
+not ledger facts. Any other statement section is rejected until its activity
+mapping is explicitly supported; the adapter never silently skips unknown
+transactional content.
+
+Before any source or ledger write, the adapter requires:
+
+- broker name `Interactive Brokers LLC`;
+- statement title `Activity Statement`;
+- a valid inclusive statement period;
+- an account ID equal to the selected Portfolio `account_id`; and
+- a base currency equal to the Portfolio base currency.
+
+The observed `Deposits & Withdrawals` rows contain a settlement date but no
+timezone-aware event timestamp or stable broker transaction ID. Those rows are
+therefore rejected rather than assigned synthetic values. A statement with no
+activity can be validated and preserved with zero imported events. Import of
+trades, income, fees, transfers, and corporate actions remains unsupported until
+representative exports establish their exact timestamp and identity fields.
+
+Real IBKR statements contain private account data. Keep them in a private data
+root; tests use inline sanitized statements that retain only the structural
+contract.

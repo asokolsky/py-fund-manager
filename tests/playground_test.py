@@ -10,8 +10,7 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from py_fund_manager.broker import execute_rebalance_plan
-from py_fund_manager.historical_broker import HistoricalBroker
+from py_fund_manager.broker import HistoricalBroker, execute_rebalance_plan
 from py_fund_manager.portfolio import (
     create_portfolio,
     import_activity,

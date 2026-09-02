@@ -1,4 +1,4 @@
-"""Broker contracts and shared rebalance execution services."""
+"""Transport-neutral broker contracts and rebalance execution services."""
 
 from __future__ import annotations
 

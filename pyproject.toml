@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["py_fund_manager"]
+packages = ["py_fund_manager", "py_fund_manager.broker"]
 
 [dependency-groups]
 # uv sync --group dev

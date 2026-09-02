@@ -93,6 +93,16 @@ conflicting latest observations are validation failures.
 
 ## Broker adapters use structural contracts
 
+Broker code lives below `py_fund_manager/broker/`. The package separates shared
+execution orchestration from concrete adapters: `execution.py` owns the
+transport-neutral protocol and plan-to-fill workflow, `imports.py` dispatches
+broker-native files to generic portfolio persistence, and `historical.py` and
+`ibkr.py` own provider-specific behavior. Portfolio persistence accepts a
+generic activity reader and does not import broker modules. The package
+`__init__.py` conventionally re-exports stable public execution contracts so
+callers do not depend on internal module layout. Future adapters follow the same
+`broker/<name>.py` pattern.
+
 The `Broker` protocol adapts a planned `BrokerOrder` to broker-supported values,
 then fulfills it and returns confirmed `Execution` records. `HistoricalBroker`
 defaults to E*TRADE-compatible three-decimal share quantities. Buys round down

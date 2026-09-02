@@ -14,7 +14,7 @@ from decimal import Decimal
 from unittest.mock import ANY, Mock, patch
 
 from py_fund_manager import __main__ as cli
-from py_fund_manager import broker as broker_service
+from py_fund_manager.broker import execution as broker_service
 from py_fund_manager.download import Interval
 from py_fund_manager.schemas import (
     BrokerOrder,
@@ -316,7 +316,7 @@ class TestCLI(unittest.TestCase):
             with (
                 self.subTest(raw_price=raw_price),
                 patch(
-                    'py_fund_manager.historical_broker.load_latest_daily_prices',
+                    'py_fund_manager.broker.historical.load_latest_daily_prices',
                     return_value={'AAPL': Mock(price=raw_price)},
                 ),
             ):
@@ -735,7 +735,7 @@ class TestCLI(unittest.TestCase):
             patch.object(sys, 'argv', arguments),
             patch.object(cli, 'data_directory', return_value=data_directory),
             patch.object(
-                cli, 'import_activity', return_value=import_result
+                cli, 'import_broker_activity', return_value=import_result
             ) as import_mock,
             redirect_stdout(stdout),
         ):

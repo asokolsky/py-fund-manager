@@ -36,6 +36,9 @@ mise exec -- uv run -m unittest -v \
 - `config_test.py` covers per-user TOML configuration and data-root resolution.
 - `download_test.py` covers ticker and year parsing, downloads, normalization,
   concurrency, and Parquet storage.
+- `ibkr_test.py` covers native monthly statement detection, BOM and section
+  parsing, account validation, optional activity, fail-closed conversion, and
+  preservation without committing private broker data.
 - `log_test.py` covers logging configuration.
 - `main_test.py` covers CLI parsing and dispatch.
 - `portfolio_test.py` covers portfolio, transaction, strategy, and import

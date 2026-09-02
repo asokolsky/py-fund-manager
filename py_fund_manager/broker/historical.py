@@ -5,7 +5,7 @@ from __future__ import annotations
 from decimal import ROUND_CEILING, ROUND_DOWN, ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING
 
-from py_fund_manager.broker import SkippedOrder
+from py_fund_manager.broker.execution import SkippedOrder
 from py_fund_manager.download import STOCKS_DIRECTORY
 from py_fund_manager.rebalance import load_latest_daily_prices
 from py_fund_manager.schemas import BrokerOrder, Execution, OrderSide

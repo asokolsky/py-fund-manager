@@ -17,16 +17,15 @@ from pathlib import Path
 import yaml
 
 from . import __version__
-from .broker import SkippedOrder, execute_rebalance_plan
+from .broker import HistoricalBroker, SkippedOrder, execute_rebalance_plan
+from .broker.imports import import_broker_activity
 from .browser import browse_portfolios
 from .config import ConfigurationError, configured_data_root
 from .download import Interval, download, inclusive_year_range, tickers_argument
-from .historical_broker import HistoricalBroker
 from .log import setup_logging
 from .portfolio import (
     create_portfolio,
     find_manifest,
-    import_activity,
     import_opening_snapshot,
     initialize_opening_balances,
     load_strategy,
@@ -387,7 +386,7 @@ def _create_portfolio_command(
 
 def _import_portfolio_command(directory: Path, args: Namespace) -> None:
     """Import confirmed activity into a portfolio ledger."""
-    import_result = import_activity(
+    import_result = import_broker_activity(
         directory / 'portfolio' / args.portfolio_id,
         args.source_file,
     )
