@@ -302,7 +302,26 @@ class PortfolioBrowserApp(App[None]):
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Open the highlighted portfolio when Enter selects its row."""
         if event.data_table.id == 'portfolios' and event.row_key.value is not None:
-            self._show_detail(int(event.row_key.value))
+            self._open_portfolio(int(event.row_key.value))
+
+    def _open_portfolio(self, index: int) -> None:
+        """Open one portfolio at a timestamp offered by its as-of selector."""
+        snapshot = self.snapshots[index]
+        if self.timestamp_loader is None or self.snapshot_loader is None:
+            self._show_detail(index)
+            return
+        try:
+            timestamps = self.timestamp_loader(snapshot.portfolio_id)
+            as_of = latest_portfolio_timestamp(timestamps, snapshot.as_of)
+        except (OSError, TypeError, ValueError) as error:
+            self.notify(str(error), title='Unable to load portfolio', severity='error')
+            return
+        if not self._reload_snapshots(
+            snapshot.portfolio_id, as_of, snapshot.portfolio_id
+        ):
+            return
+        self.scope_portfolio_id = snapshot.portfolio_id
+        self._show_detail(self.selected_index)
 
     def action_return_to_list(self) -> None:
         """Return from full-window details to the portfolio list."""

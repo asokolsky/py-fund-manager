@@ -262,6 +262,77 @@ class TestPortfolioBrowserApp(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(app.query_one('#list-screen').display)
             self.assertEqual(app.title, f'Portfolio Browser as of {as_of.isoformat()}')
 
+    async def test_opened_portfolio_timestamp_is_available_in_selector(self) -> None:
+        """Open details at a transaction timestamp owned by that portfolio."""
+        list_time = datetime(2026, 1, 1, 12, tzinfo=UTC)
+        portfolio_time = datetime(2025, 12, 15, 12, tzinfo=UTC)
+        first = PortfolioSnapshot(
+            'first',
+            'First',
+            'historical',
+            'one',
+            'USD',
+            list_time,
+            (),
+            Decimal(100),
+            Decimal(0),
+            Decimal(100),
+            1,
+            (),
+        )
+        playground = PortfolioSnapshot(
+            'playground',
+            'Playground',
+            'historical',
+            'two',
+            'USD',
+            list_time,
+            (),
+            Decimal(50),
+            Decimal(0),
+            Decimal(50),
+            1,
+            (),
+        )
+        revalued = PortfolioSnapshot(
+            'playground',
+            'Playground',
+            'historical',
+            'two',
+            'USD',
+            portfolio_time,
+            (),
+            Decimal(50),
+            Decimal(0),
+            Decimal(50),
+            1,
+            (),
+        )
+        snapshot_loader = Mock(return_value=(revalued,))
+        timestamp_loader = Mock(return_value=(portfolio_time,))
+        app = PortfolioBrowserApp(
+            (first, playground), None, snapshot_loader, timestamp_loader
+        )
+
+        async with app.run_test() as pilot:
+            await pilot.press('down', 'enter')
+            await pilot.pause()
+
+            self.assertEqual(app.scope_portfolio_id, 'playground')
+            self.assertEqual(
+                app.title, f'playground as of {portfolio_time.isoformat()}'
+            )
+            snapshot_loader.assert_called_once_with('playground', portfolio_time)
+
+            await pilot.press('a')
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, AsOfScreen)
+            self.assertEqual(screen.timestamps, (portfolio_time,))
+            self.assertEqual(
+                screen.query_one('#as-of-options', OptionList).highlighted, 0
+            )
+
     async def test_initial_portfolio_opens_detail_then_loads_list(self) -> None:
         """Open a scoped detail directly and load every portfolio on Backspace."""
         as_of = datetime(2026, 9, 1, tzinfo=UTC)

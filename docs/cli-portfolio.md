@@ -157,7 +157,8 @@ mise run py-fund-manager -- \
 
 The list shows each portfolio, broker account ID, and total value. Its summary
 pane shows account metadata, cash, positions value, and total value. Press
-`Enter` to open the selected portfolio in a full-window details view; press
+`Enter` to open the selected portfolio in a full-window details view at its
+latest transaction timestamp not later than the list timestamp; press
 `Backspace` to return to the list, `a` to select an as-of time, and `q` to exit.
 The details table shows each ticker's quantity and value, followed by a separated
 cash row. Total value appears in a separate block below the table. The as-of
