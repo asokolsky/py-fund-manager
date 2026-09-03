@@ -27,7 +27,7 @@ run = [
 [tasks.clean]
 description = "Do local clean-up"
 run = [
-    'rm -rf .mypy_cache .ruff_cache .venv dist py_fund_manager.egg-info',
+    'rm -rf .mypy_cache .ruff_cache .venv dist src/py_fund_manager.egg-info',
     'find . -name __pycache__ | xargs rm -rf'
 ]
 
@@ -35,23 +35,23 @@ run = [
 description = "Format python sources"
 run = [
     # sort imports
-    'uv run ruff check --select I --fix py_fund_manager tests sample-data/strategy/SnP500-direct/generate_strategy.py',
+    'uv run ruff check --select I --fix src/py_fund_manager tests sample-data/strategy/SnP500-direct/generate_strategy.py',
     # reformat sources
-    'uv run ruff format -v py_fund_manager tests sample-data/strategy/SnP500-direct/generate_strategy.py',
+    'uv run ruff format -v src/py_fund_manager tests sample-data/strategy/SnP500-direct/generate_strategy.py',
 ]
 
 [tasks.lint]
 description = "Lint python sources"
 run = [
     # check imports
-    'uv run ruff check -v --select I py_fund_manager tests',
-    'uv run ruff check -v py_fund_manager tests sample-data/strategy/SnP500-direct/generate_strategy.py'
+    'uv run ruff check -v --select I src/py_fund_manager tests',
+    'uv run ruff check -v src/py_fund_manager tests sample-data/strategy/SnP500-direct/generate_strategy.py'
 ]
 
 [tasks.mypy]
 description = "Check typing"
 run = [
-    'uv run mypy py_fund_manager tests sample-data/strategy/SnP500-direct/generate_strategy.py'
+    'uv run mypy src/py_fund_manager tests sample-data/strategy/SnP500-direct/generate_strategy.py'
 ]
 
 [tasks.tests]

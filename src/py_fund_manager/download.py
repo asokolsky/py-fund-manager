@@ -14,7 +14,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import yfinance as yf
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 STOCKS_DIRECTORY = PROJECT_ROOT / 'stocks-by-ticker'
 TICKER_PATTERN = re.compile(r'^[A-Z0-9.^=_-]+$')
 YEAR_RANGE_PATTERN = re.compile(r'^(\d{4})(?:-(\d{4}))?$')

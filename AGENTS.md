@@ -24,8 +24,8 @@
 
 ## Historical-price downloads
 
-- Keep Yahoo Finance requests in `py_fund_manager/download.py` and CLI wiring in
-  `py_fund_manager/__main__.py`.
+- Keep Yahoo Finance requests in `src/py_fund_manager/download.py` and CLI wiring
+  in `src/py_fund_manager/__main__.py`.
 - Preserve successful ticker and year files when another request fails.
 - Download multiple tickers with a bounded worker pool.
 - Request each year independently so later years are attempted after an earlier
@@ -58,5 +58,5 @@
 ## Generated files
 
 - Do not commit `.venv`, Python caches, Ruff or mypy caches, `build`, `dist`, or
-  `py_fund_manager.egg-info`.
+  `src/py_fund_manager.egg-info`.
 - Use `mise run clean` for local cleanup.

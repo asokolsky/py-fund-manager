@@ -20,7 +20,7 @@ See [planned work](docs/todo.md) for capabilities that are not implemented yet.
 
 ## Repo structure
 
-- `py_fund_manager/` contains the Python package, CLI, configuration loader,
+- `src/py_fund_manager/` contains the Python package, CLI, configuration loader,
   schemas, and portfolio persistence operations.
 - [`tests/`](tests/README.md) contains deterministic unit tests and instructions
   for running the complete suite or selected tests.

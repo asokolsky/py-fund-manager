@@ -93,7 +93,7 @@ conflicting latest observations are validation failures.
 
 ## Broker adapters use structural contracts
 
-Broker code lives below `py_fund_manager/broker/`. The package separates shared
+Broker code lives below `src/py_fund_manager/broker/`. The package separates shared
 execution orchestration from concrete adapters: `execution.py` owns the
 transport-neutral protocol and plan-to-fill workflow, `imports.py` dispatches
 broker-native files to generic portfolio persistence, and `historical.py` and
@@ -143,7 +143,7 @@ timestamps.
 ## Pydantic models are the schema authority
 
 All persisted inputs and structured outputs are defined as frozen Pydantic models
-in `py_fund_manager/schemas.py`. Persisted-document
+in `src/py_fund_manager/schemas.py`. Persisted-document
 loaders reject duplicate keys, unknown fields, unsupported API versions or kinds,
 invalid
 identifiers and tickers, naive timestamps, invalid decimal values, and

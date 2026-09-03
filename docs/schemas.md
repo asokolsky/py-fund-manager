@@ -19,10 +19,10 @@ validation enforce cross-file identity, ordering, and reference rules.
 
 ## Portfolio
 
-Source: [`Portfolio` and `PortfolioSpec`](../py_fund_manager/schemas.py#L53)
-define the manifest. [`load_manifest`](../py_fund_manager/portfolio.py#L287)
+Source: [`Portfolio` and `PortfolioSpec`](../src/py_fund_manager/schemas.py#L53)
+define the manifest. [`load_manifest`](../src/py_fund_manager/portfolio.py#L287)
 performs strict YAML dispatch and model validation, while
-[`find_manifest_in`](../py_fund_manager/portfolio.py#L374) enforces uniqueness
+[`find_manifest_in`](../src/py_fund_manager/portfolio.py#L374) enforces uniqueness
 and the containing-directory identity.
 
 ```yaml
@@ -49,13 +49,13 @@ portfolio directory name.
 
 ## Transaction
 
-Source: [`Transaction`](../py_fund_manager/schemas.py#L89) defines each ledger
-fact. [`load_transactions`](../py_fund_manager/portfolio.py#L412) validates CSV
+Source: [`Transaction`](../src/py_fund_manager/schemas.py#L89) defines each ledger
+fact. [`load_transactions`](../src/py_fund_manager/portfolio.py#L412) validates CSV
 rows through that model, then
-[`validate_transaction_ledger`](../py_fund_manager/portfolio.py#L428) enforces
+[`validate_transaction_ledger`](../src/py_fund_manager/portfolio.py#L428) enforces
 ledger-wide chronology and unique identities. Opening and activity imports enter
-through [`import_opening_snapshot`](../py_fund_manager/portfolio.py#L150) and
-[`import_activity`](../py_fund_manager/portfolio.py#L195).
+through [`import_opening_snapshot`](../src/py_fund_manager/portfolio.py#L150) and
+[`import_activity`](../src/py_fund_manager/portfolio.py#L195).
 
 `transactions.csv` has these columns:
 
@@ -98,9 +98,9 @@ implemented.
 ## Strategy
 
 Source: [`TargetAllocation`, `StrategySpec`, and
-`Strategy`](../py_fund_manager/schemas.py#L183) define the allocation and
-manifest. [`load_manifest`](../py_fund_manager/portfolio.py#L287) validates the
-document, and [`find_manifest_in`](../py_fund_manager/portfolio.py#L374) enforces
+`Strategy`](../src/py_fund_manager/schemas.py#L183) define the allocation and
+manifest. [`load_manifest`](../src/py_fund_manager/portfolio.py#L287) validates the
+document, and [`find_manifest_in`](../src/py_fund_manager/portfolio.py#L374) enforces
 the resource-directory identity.
 
 ```yaml
@@ -130,14 +130,14 @@ Existing mixed-case identities such as `SnP500-direct` remain valid.
 ## StrategyHistory
 
 Source: [`StrategyRevisionReference`, `StrategyAssignment`, and
-`StrategyHistory`](../py_fund_manager/schemas.py#L261) define references and
-ordered assignments. [`load_strategy_history`](../py_fund_manager/strategy.py#L109)
-loads the manifest, [`effective_assignment`](../py_fund_manager/strategy.py#L118)
+`StrategyHistory`](../src/py_fund_manager/schemas.py#L261) define references and
+ordered assignments. [`load_strategy_history`](../src/py_fund_manager/strategy.py#L109)
+loads the manifest, [`effective_assignment`](../src/py_fund_manager/strategy.py#L118)
 selects an assignment for a requested time, and
-[`load_strategy_revision`](../py_fund_manager/strategy.py#L90) enforces revision
+[`load_strategy_revision`](../src/py_fund_manager/strategy.py#L90) enforces revision
 identity and content integrity. Complete data-root validation checks directory
 identity and every referenced revision in
-[`_validate_portfolios`](../py_fund_manager/validation.py#L76).
+[`_validate_portfolios`](../src/py_fund_manager/validation.py#L76).
 
 ```yaml
 apiVersion: v1
@@ -167,13 +167,13 @@ content. For a requested time, the active assignment is the last assignment whos
 ## Rebalance plan
 
 Source: [`RebalanceOrder`, `RebalanceValuation`, `RebalanceSummary`, and
-`RebalancePlan`](../py_fund_manager/schemas.py#L430) define the complete output
+`RebalancePlan`](../src/py_fund_manager/schemas.py#L430) define the complete output
 and its reconciliation validators.
-[`plan_rebalance`](../py_fund_manager/rebalance.py#L190) constructs the plan from
+[`plan_rebalance`](../src/py_fund_manager/rebalance.py#L190) constructs the plan from
 validated portfolio state, strategy, and prices. Broker execution reloads JSON
-through [`load_rebalance_plan`](../py_fund_manager/__main__.py#L271), which runs
+through [`load_rebalance_plan`](../src/py_fund_manager/__main__.py#L271), which runs
 the same Pydantic validation before any order is submitted. The shared
-[`normalize_cash_flow_amount`](../py_fund_manager/schemas.py#L564) constraint
+[`normalize_cash_flow_amount`](../src/py_fund_manager/schemas.py#L564) constraint
 enforces exact cents and the fixed 18-integer-digit currency limit for both CLI
 and library callers.
 
