@@ -243,9 +243,10 @@ eligible 15 minutes after the exchange calendar's actual session close, includin
 early-close sessions. Price, date, availability time, currency, provider,
 retrieval time, exchange calendar, and source partition are selected together.
 Missing metadata, conflicting observations, and prices older than the expected
-completed session fail the plan. Yahoo-style class-share symbols map strategy
-dots to price-cache hyphens, such as `BRK.B` to `BRK-B`. All transaction and price
-currencies must match the portfolio's base currency.
+completed session fail the plan. Known Yahoo class-share symbols map strategy
+dots to price-cache hyphens, such as `BRK.B` to `BRK-B`; exchange suffixes such as
+`VOD.L` remain unchanged. All transaction and price currencies must match the
+portfolio's base currency.
 
 ### Price refresh workflow
 
@@ -278,6 +279,11 @@ duplicating Yahoo Finance requests in the CLI dispatcher. A failed ticker or yea
 does not erase successful atomic writes. Planning can continue only when the
 resulting cache still contains a complete, fresh required price set, unless the
 explicit stale-price override was supplied.
+
+Legacy partitions without exchange-calendar and retrieval metadata remain usable
+for historical valuation. Rebalance treats them as stale by default because the
+expected completed session cannot be established. `--allow-stale-prices` permits
+their reviewed use and identifies the missing provenance in the plan warning.
 
 To review and accept an older observation when the provider has not yet published
 the expected session:

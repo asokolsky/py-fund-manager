@@ -43,6 +43,13 @@ class TestDownload(unittest.TestCase):
         with self.assertRaises(ArgumentTypeError):
             downloader.tickers_argument('AAPL,../../tmp')
 
+    def test_yahoo_ticker_only_maps_known_class_shares(self) -> None:
+        """Preserve exchange suffixes while mapping known class-share symbols."""
+        self.assertEqual(downloader.yahoo_ticker('BRK.B'), 'BRK-B')
+        for ticker in ('VOD.L', '7203.T', 'SHOP.TO'):
+            with self.subTest(ticker=ticker):
+                self.assertEqual(downloader.yahoo_ticker(ticker), ticker)
+
     def test_load_tickers_from_file(self) -> None:
         """Load, normalize, and deduplicate ticker-file entries."""
         with tempfile.TemporaryDirectory() as temporary_directory:

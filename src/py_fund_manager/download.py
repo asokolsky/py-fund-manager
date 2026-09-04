@@ -16,6 +16,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import yfinance as yf
 from exchange_calendars import get_calendar
+from exchange_calendars.errors import InvalidCalendarName
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 STOCKS_DIRECTORY = PROJECT_ROOT / 'stocks-by-ticker'
@@ -30,6 +31,12 @@ YAHOO_EXCHANGE_CALENDARS = {
     'NYQ': 'XNYS',
     'PCX': 'ARCX',
     'LSE': 'XLON',
+}
+YAHOO_CLASS_SHARE_TICKERS = {
+    'BF.A': 'BF-A',
+    'BF.B': 'BF-B',
+    'BRK.A': 'BRK-A',
+    'BRK.B': 'BRK-B',
 }
 
 
@@ -46,6 +53,11 @@ class Interval(StrEnum):
         if self is Interval.WEEKLY:
             return '1wk'
         return self.value
+
+
+def yahoo_ticker(ticker: str) -> str:
+    """Return the Yahoo symbol for a known class-share ticker."""
+    return YAHOO_CLASS_SHARE_TICKERS.get(ticker, ticker)
 
 
 def comma_separated_tickers(value: str) -> set[str]:
@@ -233,7 +245,7 @@ def _validated_price_metadata(
         raise ValueError(message)
     try:
         get_calendar(exchange_calendar)
-    except Exception as error:
+    except InvalidCalendarName as error:
         raise ValueError(
             f'Unsupported Yahoo exchange identifier: {exchange_name!r}'
         ) from error

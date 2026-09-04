@@ -346,6 +346,33 @@ class TestRebalance(unittest.TestCase):
             date(2026, 9, 4),
         )
 
+    def test_calendar_programming_errors_are_not_reclassified(self) -> None:
+        """Let unexpected calendar-library failures retain their error type."""
+        with (
+            patch(
+                'py_fund_manager.rebalance.get_calendar',
+                side_effect=RuntimeError('calendar API changed'),
+            ),
+            self.assertRaisesRegex(RuntimeError, 'calendar API changed'),
+        ):
+            expected_latest_session('XNAS', AS_OF)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_daily_prices(
+                root / 'interval=1d/ticker=AAPL/year=2026/data.parquet',
+                [date(2026, 8, 25)],
+                [100.25],
+            )
+            with (
+                patch(
+                    'py_fund_manager.rebalance.get_calendar',
+                    side_effect=RuntimeError('calendar API changed'),
+                ),
+                self.assertRaisesRegex(RuntimeError, 'calendar API changed'),
+            ):
+                load_latest_daily_prices({'AAPL'}, AS_OF, 'USD', root)
+
     def test_stale_prices_fail_without_explicit_override(self) -> None:
         """Reject old observations and report reviewed stale-price overrides."""
         prices = {'AAPL': price_observation('AAPL', Decimal(100))}
@@ -357,13 +384,30 @@ class TestRebalance(unittest.TestCase):
         warnings = validate_price_freshness(prices, planning_time, allow_stale=True)
         self.assertIn('Explicitly allowed stale prices: AAPL', warnings[0])
 
+    def test_legacy_price_requires_explicit_stale_override(self) -> None:
+        """Treat missing calendar provenance as stale and honor the override."""
+        observation = price_observation('AAPL', Decimal(100)).model_copy(
+            update={'exchange_calendar': 'legacy'}
+        )
+        prices = {'AAPL': observation}
+        planning_time = datetime(2026, 9, 8, 12, tzinfo=UTC)
+
+        with self.assertRaisesRegex(
+            ValueError, 'legacy cache lacks exchange-calendar provenance'
+        ):
+            validate_price_freshness(prices, planning_time)
+
+        warnings = validate_price_freshness(prices, planning_time, allow_stale=True)
+        self.assertIn('legacy cache lacks exchange-calendar provenance', warnings[0])
+
     def test_rebalance_refreshes_union_before_planning(self) -> None:
         """Refresh provider symbols for current holdings and strategy targets."""
-        strategy = target_strategy({'AAPL': '1'})
+        strategy = target_strategy({'AAPL': '0.5', 'VOD.L': '0.5'})
         strategy_assignment = assignment(strategy)
         prices = {
             'AAPL': price_observation('AAPL', Decimal(100)),
             'BRK.B': price_observation('BRK.B', Decimal(200)),
+            'VOD.L': price_observation('VOD.L', Decimal(150)),
         }
         result = Mock()
         stocks_directory = Path('test-prices')
@@ -415,14 +459,14 @@ class TestRebalance(unittest.TestCase):
 
         self.assertIs(actual, result)
         refresh.assert_called_once_with(
-            {'AAPL', 'BRK-B'},
+            {'AAPL', 'BRK-B', 'VOD.L'},
             (2025, 2026),
             '1d',
             stocks_directory=stocks_directory,
             progress_stream=sys.stderr,
         )
         load_prices.assert_called_once_with(
-            {'AAPL', 'BRK.B'}, AS_OF, 'USD', stocks_directory
+            {'AAPL', 'BRK.B', 'VOD.L'}, AS_OF, 'USD', stocks_directory
         )
         validate_prices.assert_called_once_with(prices, AS_OF, allow_stale=True)
         self.assertEqual(

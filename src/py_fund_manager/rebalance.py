@@ -11,8 +11,14 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import pyarrow.parquet as pq
 from exchange_calendars import get_calendar
+from exchange_calendars.errors import (
+    DateOutOfBounds,
+    InvalidCalendarName,
+    NotSessionError,
+    RequestedSessionOutOfBounds,
+)
 
-from py_fund_manager.download import STOCKS_DIRECTORY, Interval, download
+from py_fund_manager.download import STOCKS_DIRECTORY, Interval, download, yahoo_ticker
 from py_fund_manager.portfolio import (
     find_manifest_in,
     load_directory_manifests,
@@ -123,20 +129,25 @@ def load_latest_daily_prices(
     for ticker in sorted(tickers):
         candidates: list[PriceObservation] = []
         price_tickers = [ticker]
-        yahoo_ticker = ticker.replace('.', '-')
-        if yahoo_ticker != ticker:
-            price_tickers.append(yahoo_ticker)
+        provider_ticker = yahoo_ticker(ticker)
+        if provider_ticker != ticker:
+            price_tickers.append(provider_ticker)
         for price_ticker in price_tickers:
             ticker_directory = (
                 stocks_directory / 'interval=1d' / f'ticker={price_ticker}'
             )
-            partitions: list[tuple[Path, list[tuple[date, object]]]] = []
+            partitions: list[
+                tuple[Path, dict[bytes, bytes], list[tuple[date, object]]]
+            ] = []
             for path in sorted(ticker_directory.glob('year=*/data.parquet')):
                 parquet = pq.ParquetFile(path)
+                metadata = parquet.schema_arrow.metadata or {}
                 table = parquet.read(columns=['date', 'close'])
                 dates = table.column('date').to_pylist()
                 closes = table.column('close').to_pylist()
-                partitions.append((path, list(zip(dates, closes, strict=True))))
+                partitions.append(
+                    (path, metadata, list(zip(dates, closes, strict=True)))
+                )
 
             # Legacy partitions are deliberately read without their new provenance
             # fields until their date could be selected. The integrated refresh only
@@ -145,7 +156,7 @@ def load_latest_daily_prices(
             candidate_dates = sorted(
                 {
                     price_date
-                    for _, rows in partitions
+                    for _, _, rows in partitions
                     for price_date, close in rows
                     if close is not None and price_date <= as_of.date()
                 },
@@ -153,12 +164,10 @@ def load_latest_daily_prices(
             )
             for price_date in candidate_dates:
                 date_candidates: list[PriceObservation] = []
-                for path, rows in partitions:
+                for path, metadata, rows in partitions:
                     for row_date, close in rows:
                         if row_date != price_date or close is None:
                             continue
-                        parquet = pq.ParquetFile(path)
-                        metadata = parquet.schema_arrow.metadata or {}
                         stored_currency = _required_metadata(
                             metadata, b'currency', path
                         ).upper()
@@ -381,7 +390,7 @@ def rebalance_portfolio(
     strategy = load_strategy_revision(data_directory, assignment.strategy)
     positions, _ = derive_portfolio_state(portfolio, transactions, as_of)
     tickers = set(positions) | set(strategy.target_weights)
-    provider_tickers = {ticker.replace('.', '-') for ticker in tickers}
+    provider_tickers = {yahoo_ticker(ticker) for ticker in tickers}
     download(
         provider_tickers,
         (as_of.year - 1, as_of.year),
@@ -425,7 +434,11 @@ def expected_latest_session(
         session = calendar.date_to_session(cutoff.date(), direction='previous')
         if calendar.session_close(session).to_pydatetime() > cutoff:
             session = calendar.previous_session(session)
-    except Exception as error:
+    except (
+        DateOutOfBounds,
+        InvalidCalendarName,
+        RequestedSessionOutOfBounds,
+    ) as error:
         msg = f'cannot resolve exchange calendar {exchange_calendar}: {error}'
         raise ValueError(msg) from error
     return cast('date', session.date())
@@ -438,15 +451,23 @@ def validate_price_freshness(
     allow_stale: bool = False,
 ) -> tuple[str, ...]:
     """Reject stale required prices or describe an explicit reviewed override."""
-    stale: list[tuple[str, date, date]] = []
+    stale: list[tuple[str, date, date | None]] = []
     for ticker, observation in sorted(prices.items()):
+        if observation.exchange_calendar == LEGACY_EXCHANGE_CALENDAR:
+            stale.append((ticker, observation.as_of, None))
+            continue
         expected = expected_latest_session(observation.exchange_calendar, as_of)
         if observation.as_of < expected:
             stale.append((ticker, observation.as_of, expected))
     if not stale:
         return ()
     details = ', '.join(
-        f'{ticker} ({observed.isoformat()}; expected {expected.isoformat()})'
+        (
+            f'{ticker} ({observed.isoformat()}; '
+            'legacy cache lacks exchange-calendar provenance)'
+            if expected is None
+            else f'{ticker} ({observed.isoformat()}; expected {expected.isoformat()})'
+        )
         for ticker, observed, expected in stale
     )
     if not allow_stale:
@@ -545,7 +566,7 @@ def _daily_close_available_at(
     try:
         calendar = get_calendar(exchange_calendar)
         close = calendar.session_close(price_date).to_pydatetime()
-    except Exception as error:
+    except (InvalidCalendarName, NotSessionError) as error:
         msg = f'{path}: invalid {exchange_calendar} session {price_date}: {error}'
         raise ValueError(msg) from error
     return cast('datetime', (close + PRICE_PUBLICATION_DELAY).astimezone(timezone))
