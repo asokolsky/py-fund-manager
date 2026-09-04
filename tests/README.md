@@ -44,8 +44,9 @@ mise exec -- uv run -m unittest -v \
 - `portfolio_test.py` covers portfolio, transaction, strategy, and import
   validation.
 - `rebalance_test.py` covers derived holdings, exact order and cash arithmetic,
-  cached-price availability and provenance, deterministic inputs, and strict
-  cash-funded and withdrawal plans.
+  integrated refresh ticker selection, exchange-calendar freshness, explicit
+  stale-price overrides, deterministic inputs, and strict cash-funded and
+  withdrawal plans.
 - `playground_test.py` opens a fictional portfolio with USD 100,000, persists
   three equal-weight Mag7 rebalances around a dividend and a confirmed USD 5,000
   deposit, then sells enough on the next trading day to fund and record a

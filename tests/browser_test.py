@@ -7,6 +7,8 @@ from decimal import Decimal
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 from textual.widgets import DataTable, OptionList, Static
 
 from py_fund_manager.browser import (
@@ -19,6 +21,31 @@ from py_fund_manager.browser import (
     load_portfolio_timestamps,
 )
 from py_fund_manager.schemas import PriceObservation
+
+
+def write_price_partition(
+    path: Path, price_date: date, close: float, *, refreshed: bool
+) -> None:
+    """Write a legacy or refreshed daily-price fixture for browser coverage."""
+    path.parent.mkdir(parents=True)
+    metadata = {
+        b'currency': b'USD',
+        b'source': b'Test prices',
+        b'exchange_timezone': b'America/New_York',
+    }
+    if refreshed:
+        metadata.update(
+            {
+                b'exchange_calendar': b'XNAS',
+                b'retrieved_at_utc': b'2026-06-01T00:00:00+00:00',
+            }
+        )
+    pq.write_table(
+        pa.table({'date': [price_date], 'close': [close]}).replace_schema_metadata(
+            metadata
+        ),
+        path,
+    )
 
 
 class TestPortfolioSnapshots(unittest.TestCase):
@@ -83,6 +110,8 @@ class TestPortfolioSnapshots(unittest.TestCase):
                 currency='USD',
                 source='test',
                 source_partition='test.parquet',
+                exchange_calendar='XNAS',
+                retrieved_at=datetime(2026, 5, 29, 21, tzinfo=UTC),
             )
             with patch(
                 'py_fund_manager.browser.load_latest_daily_prices',
@@ -100,6 +129,81 @@ class TestPortfolioSnapshots(unittest.TestCase):
             snapshots[0].warnings,
             ('Prices are older than 2026-06-01 for: AAPL',),
         )
+
+    def test_browser_uses_refreshed_price_with_older_legacy_cache(self) -> None:
+        """Keep browser valuations working when old cache partitions lack new fields."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            account = root / 'portfolio' / 'brokerage'
+            account.mkdir(parents=True)
+            (account / 'account.yaml').write_text(
+                'apiVersion: v1\nkind: Portfolio\nmetadata:\n'
+                '  name: brokerage\n  display_name: Brokerage\n'
+                'spec:\n  broker: historical\n  account_id: acct-123\n'
+                '  base_currency: USD\n',
+                encoding='utf-8',
+            )
+            (account / 'transactions.csv').write_text(
+                'id,occurred_at,type,ticker,quantity,price,amount,cost_basis,'
+                'currency,fees,external_id\n'
+                'shares,2026-01-01T00:00:00+00:00,opening_position,AAPL,2,,,10,USD,0,\n',
+                encoding='utf-8',
+            )
+            stocks_directory = root / 'stocks'
+            write_price_partition(
+                stocks_directory / 'interval=1d/ticker=AAPL/year=2024/data.parquet',
+                date(2024, 12, 31),
+                10.0,
+                refreshed=False,
+            )
+            write_price_partition(
+                stocks_directory / 'interval=1d/ticker=AAPL/year=2026/data.parquet',
+                date(2026, 5, 29),
+                25.0,
+                refreshed=True,
+            )
+
+            snapshots = load_portfolio_snapshots(
+                root, 'brokerage', datetime(2026, 6, 1, tzinfo=UTC), stocks_directory
+            )
+
+        self.assertEqual(snapshots[0].positions_value, Decimal(50))
+
+    def test_browser_values_historical_snapshot_from_legacy_partition(self) -> None:
+        """Continue to value a historical snapshot from a selected legacy close."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            account = root / 'portfolio' / 'brokerage'
+            account.mkdir(parents=True)
+            (account / 'account.yaml').write_text(
+                'apiVersion: v1\nkind: Portfolio\nmetadata:\n'
+                '  name: brokerage\n  display_name: Brokerage\n'
+                'spec:\n  broker: historical\n  account_id: acct-123\n'
+                '  base_currency: USD\n',
+                encoding='utf-8',
+            )
+            (account / 'transactions.csv').write_text(
+                'id,occurred_at,type,ticker,quantity,price,amount,cost_basis,'
+                'currency,fees,external_id\n'
+                'shares,2024-01-01T00:00:00+00:00,opening_position,AAPL,2,,,10,USD,0,\n',
+                encoding='utf-8',
+            )
+            stocks_directory = root / 'stocks'
+            write_price_partition(
+                stocks_directory / 'interval=1d/ticker=AAPL/year=2024/data.parquet',
+                date(2024, 12, 31),
+                10.0,
+                refreshed=False,
+            )
+
+            snapshots = load_portfolio_snapshots(
+                root,
+                'brokerage',
+                datetime(2025, 1, 2, 12, tzinfo=UTC),
+                stocks_directory,
+            )
+
+        self.assertEqual(snapshots[0].positions_value, Decimal(20))
 
     def test_named_portfolio_must_exist(self) -> None:
         """Report a clear error instead of opening an empty TUI portfolio browser."""

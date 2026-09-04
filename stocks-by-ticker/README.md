@@ -91,10 +91,14 @@ and do not need to be duplicated in each Parquet row.
 - Missing observations remain missing; stored prices must not be interpolated or
   forward-filled.
 - Dataset metadata or an accompanying manifest must record the data source,
-  retrieval time in UTC, exchange time zone, trading currency, and bar interval
-  (`1h`, `1d`, or `1w`).
-- Rebalance planning treats a daily close as available at 16:00 in the recorded
-  exchange timezone. The price, date, currency, source, and partition remain one
-  observation; metadata from another partition cannot qualify the selected row.
+  retrieval time in UTC, exchange calendar, exchange time zone, trading currency,
+  and bar interval (`1h`, `1d`, or `1w`).
+- Rebalance planning treats a daily close as available 15 minutes after the
+  exchange calendar's session close. The price, date, currency, source, retrieval
+  time, calendar, and partition remain one observation; metadata from another
+  partition cannot qualify the selected row.
+- Legacy daily partitions without the refresh calendar and retrieval metadata may
+  still support historical browser and broker valuations using the former 16:00
+  exchange-local availability rule. They cannot qualify a fresh rebalance price.
 - Refreshes replace the affected yearly file atomically after validating its
   schema, uniqueness, ordering, and partition year.

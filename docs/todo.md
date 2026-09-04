@@ -5,15 +5,6 @@ unimplemented. Items stay here until they are addressed.
 
 ## Capability backlog
 
-- **TODO: Integrated rebalance price refresh.** Before planning, derive the union
-  of current and strategy tickers, refresh their current daily partitions with a
-  bounded worker pool, and preserve successful atomic writes across partial
-  failures. Use exchange calendars, exchange timezones, and a provider-publication
-  delay to identify the expected latest completed session. Fail on missing or
-  stale required observations by default; define an explicit
-  `--allow-stale-prices` review override. Keep download and rebalance logic in
-  shared application services. See the documented [price refresh
-  workflow](cli-portfolio.md#price-refresh-workflow).
 - **TODO: Tax lots and advanced broker activity.** Decide whether lot identity
   and acquisition date belong on transaction rows or in a related lot-allocation
   file, including multiple lots for one ticker. Add later holdings snapshots

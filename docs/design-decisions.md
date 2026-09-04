@@ -85,11 +85,12 @@ exactly instead of hiding fractional residual cash behind cent rounding.
 ## Daily closes require coherent provenance and an availability time
 
 A rebalance price is selected together with its trading date, currency, provider,
-exchange timezone, and relative Parquet partition. Daily bars have no intraday
-timestamp, so the planner treats a close as available from 16:00 in the recorded
-exchange timezone. This conservative boundary prevents a same-day close from
-being used before the regular session has ended. Missing provenance metadata and
-conflicting latest observations are validation failures.
+retrieval time, exchange calendar, exchange timezone, and relative Parquet
+partition. Daily bars have no intraday timestamp, so the planner uses the
+calendar's actual session close plus a 15-minute provider-publication delay. This
+handles weekends, holidays, and early closes without assuming every session ends
+at 16:00. Missing provenance metadata, conflicting latest observations, and stale
+required sessions are validation failures by default.
 
 ## Broker adapters use structural contracts
 

@@ -14,6 +14,7 @@ from decimal import Decimal
 from unittest.mock import ANY, Mock, patch
 
 from py_fund_manager import __main__ as cli
+from py_fund_manager import rebalance as rebalance_service
 from py_fund_manager.broker import execution as broker_service
 from py_fund_manager.download import Interval
 from py_fund_manager.schemas import (
@@ -803,6 +804,7 @@ class TestCLI(unittest.TestCase):
             '5000.00',
             '--as-of',
             '2026-08-26T12:00:00Z',
+            '--allow-stale-prices',
         ]
         data_directory = cli.Path('test-data')
         plan = Mock()
@@ -823,7 +825,78 @@ class TestCLI(unittest.TestCase):
             'brokerage',
             datetime(2026, 8, 26, 12, tzinfo=UTC),
             withdrawal=Decimal('5000.00'),
+            allow_stale_prices=True,
         )
+
+    def test_rebalance_stdout_remains_json_after_successful_refresh(self) -> None:
+        """Send refresh progress to stderr so broker plan stdout stays parseable."""
+        arguments = [
+            cli.CLI_NAME,
+            'portfolio',
+            'rebalance',
+            'brokerage',
+            '--as-of',
+            '2026-08-26T12:00:00Z',
+        ]
+        data_directory = cli.Path('test-data')
+        portfolio = Mock()
+        portfolio.spec.base_currency = 'USD'
+        strategy = Mock(target_weights={'AAPL': Decimal(1)})
+        plan = Mock()
+        plan.model_dump_json.return_value = '{"schema_version": 1}'
+
+        def successful_refresh(
+            *_: object, progress_stream: io.StringIO, **__: object
+        ) -> int:
+            print('Wrote 1 rows to test-prices/data.parquet', file=progress_stream)
+            return 0
+
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with (
+            patch.object(sys, 'argv', arguments),
+            patch.object(cli, 'data_directory', return_value=data_directory),
+            patch.object(
+                rebalance_service, 'load_directory_manifests', return_value={}
+            ),
+            patch.object(
+                rebalance_service,
+                'find_manifest_in',
+                side_effect=[
+                    (cli.Path('portfolio.yaml'), portfolio),
+                    (cli.Path('history.yaml'), Mock()),
+                ],
+            ),
+            patch.object(rebalance_service, 'load_transactions', return_value=[]),
+            patch.object(
+                rebalance_service, 'effective_assignment', return_value=Mock()
+            ),
+            patch.object(
+                rebalance_service, 'load_strategy_revision', return_value=strategy
+            ),
+            patch.object(
+                rebalance_service,
+                'derive_portfolio_state',
+                return_value=({'AAPL': Decimal(1)}, Decimal(0)),
+            ),
+            patch.object(rebalance_service, 'download', side_effect=successful_refresh),
+            patch.object(
+                rebalance_service,
+                'load_latest_daily_prices',
+                return_value={'AAPL': Mock()},
+            ),
+            patch.object(
+                rebalance_service, 'validate_price_freshness', return_value=()
+            ),
+            patch.object(rebalance_service, 'plan_rebalance', return_value=plan),
+            redirect_stdout(stdout),
+            redirect_stderr(stderr),
+        ):
+            result = cli.main()
+
+        self.assertEqual(result, 0)
+        self.assertEqual(json.loads(stdout.getvalue()), {'schema_version': 1})
+        self.assertIn('Wrote 1 rows', stderr.getvalue())
 
     def test_removed_rebalance_option_names_are_rejected(self) -> None:
         """Reject removed contribution and superseded withdrawal option names."""

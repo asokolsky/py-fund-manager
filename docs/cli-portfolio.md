@@ -187,8 +187,8 @@ options:
 ## Rebalance a portfolio
 
 The command uses the strategy assignment effective at the planning time, derived
-holdings and cash, and cached daily closing prices to produce a broker-neutral JSON
-order plan.
+holdings and cash, and freshly retrieved daily closing prices to produce a
+broker-neutral JSON order plan.
 
 Rebalancing treats existing portfolio cash as investable. It generates buy
 orders that move cash into underweight strategy positions, leaving only any
@@ -239,32 +239,24 @@ mise py-fund-manager -- portfolio rebalance brokerage \
 ```
 
 Prices come from the latest eligible `interval=1d` close. A daily close becomes
-eligible at 16:00 in the exchange timezone stored in its Parquet partition, so a
-same-day close is not used earlier in that trading day. Price, date, availability
-time, currency, provider, and source partition are selected together. Missing
-prices or required metadata fail the plan; observations older than the planning
-date produce a warning. Yahoo-style class-share symbols map strategy dots to
-price-cache hyphens, such as `BRK.B` to `BRK-B`. All transaction and price
+eligible 15 minutes after the exchange calendar's actual session close, including
+early-close sessions. Price, date, availability time, currency, provider,
+retrieval time, exchange calendar, and source partition are selected together.
+Missing metadata, conflicting observations, and prices older than the expected
+completed session fail the plan. Yahoo-style class-share symbols map strategy
+dots to price-cache hyphens, such as `BRK.B` to `BRK-B`. All transaction and price
 currencies must match the portfolio's base currency.
 
 ### Price refresh workflow
 
-The current rebalance command reads the local price cache; it does not contact the
-price provider. “Latest eligible” therefore means the latest qualifying close in
-`stocks-by-ticker/`, not necessarily the latest close published by the market.
-Use the [download command](cli-download.md) to refresh daily prices before
-rebalancing. A cached observation older than the planning date currently produces
-a warning rather than failing the plan.
-
-The planned integrated refresh workflow is:
+The rebalance command performs this integrated refresh workflow:
 
 1. Resolve the portfolio's effective strategy and derive its current holdings.
 1. Build the required ticker set from the union of strategy positions and current
    holdings, including holdings that must be sold because they are absent from the
    strategy.
-1. Refresh `interval=1d` data for the current year. Also refresh the previous year
-   when it may contain the latest completed session, such as immediately after a
-   year boundary.
+1. Refresh `interval=1d` data for the planning year and previous year so a year
+   boundary cannot hide the latest completed session.
 1. Download tickers concurrently with a bounded worker pool. Write each successful
    yearly partition atomically and preserve existing successful partitions when
    another ticker or year fails.
@@ -275,13 +267,25 @@ The planned integrated refresh workflow is:
    availability time, currency, provider, retrieval time, and source partition for
    that expected session.
 1. Fail planning if any required observation is missing, conflicting, or stale.
-   A future explicit `--allow-stale-prices` option may permit a reviewed exception;
-   stale data must never be accepted implicitly.
+   `--allow-stale-prices` permits a reviewed exception and records the accepted
+   tickers, observed dates, and expected dates in the plan warnings; stale data is
+   never accepted implicitly.
 1. Generate the plan only after the complete price set passes validation. Include
    the selected price provenance in every order as the current schema requires.
 
-This workflow will use the downloader and rebalance planner as shared application
-services rather than duplicating Yahoo Finance requests in the CLI dispatcher.
+The workflow uses downloader and rebalance application services rather than
+duplicating Yahoo Finance requests in the CLI dispatcher. A failed ticker or year
+does not erase successful atomic writes. Planning can continue only when the
+resulting cache still contains a complete, fresh required price set, unless the
+explicit stale-price override was supplied.
+
+To review and accept an older observation when the provider has not yet published
+the expected session:
+
+```shell
+mise py-fund-manager -- portfolio rebalance brokerage \
+  --allow-stale-prices
+```
 
 The command writes the JSON order plan to standard output so it can be saved and
 reviewed:

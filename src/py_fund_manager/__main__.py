@@ -207,6 +207,11 @@ def main() -> int:  # noqa: PLR0911 - command dispatch has explicit exit statuse
         '--withdraw', type=nonnegative_amount, default=Decimal(0), dest='withdrawal'
     )
     portfolio_rebalance_parser.add_argument('--as-of', type=effective_time)
+    portfolio_rebalance_parser.add_argument(
+        '--allow-stale-prices',
+        action='store_true',
+        help='Allow reviewed use of prices older than the expected market session',
+    )
 
     args = parser.parse_args()
     if args.version:
@@ -530,6 +535,7 @@ def _rebalance_command(directory: Path, portfolio_id: str, args: Namespace) -> i
         portfolio_id,
         args.as_of or datetime.now(UTC),
         withdrawal=args.withdrawal,
+        allow_stale_prices=args.allow_stale_prices,
     )
     print(plan.model_dump_json(indent=2))
     return 0

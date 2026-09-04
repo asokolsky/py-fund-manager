@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, time
+import sys
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_CEILING, ROUND_DOWN, Decimal
 from pathlib import Path  # noqa: TC003 - used by runtime-configurable storage paths.
+from typing import cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import pyarrow.parquet as pq
+from exchange_calendars import get_calendar
 
-from py_fund_manager.download import STOCKS_DIRECTORY
+from py_fund_manager.download import STOCKS_DIRECTORY, Interval, download
 from py_fund_manager.portfolio import (
     find_manifest_in,
     load_directory_manifests,
@@ -38,7 +41,8 @@ from py_fund_manager.strategy import (
 
 CENT = Decimal('0.01')
 QUANTITY_INCREMENT = Decimal('0.000001')
-DAILY_CLOSE_TIME = time(16)
+PRICE_PUBLICATION_DELAY = timedelta(minutes=15)
+LEGACY_EXCHANGE_CALENDAR = 'legacy'
 
 
 def derive_portfolio_state(
@@ -126,40 +130,66 @@ def load_latest_daily_prices(
             ticker_directory = (
                 stocks_directory / 'interval=1d' / f'ticker={price_ticker}'
             )
+            partitions: list[tuple[Path, list[tuple[date, object]]]] = []
             for path in sorted(ticker_directory.glob('year=*/data.parquet')):
                 parquet = pq.ParquetFile(path)
-                metadata = parquet.schema_arrow.metadata or {}
-                stored_currency = _required_metadata(
-                    metadata, b'currency', path
-                ).upper()
-                source = _required_metadata(metadata, b'source', path)
-                exchange_timezone = _required_metadata(
-                    metadata, b'exchange_timezone', path
-                )
                 table = parquet.read(columns=['date', 'close'])
                 dates = table.column('date').to_pylist()
                 closes = table.column('close').to_pylist()
-                for price_date, close in zip(dates, closes, strict=True):
-                    if close is None:
-                        continue
-                    available_at = _daily_close_available_at(
-                        price_date, exchange_timezone, path
-                    )
-                    if available_at > as_of:
-                        continue
-                    candidates.append(
-                        PriceObservation(
-                            ticker=ticker,
-                            as_of=price_date,
-                            available_at=available_at,
-                            price=Decimal(str(close)),
-                            currency=stored_currency,
-                            source=source,
-                            source_partition=path.relative_to(
-                                stocks_directory
-                            ).as_posix(),
+                partitions.append((path, list(zip(dates, closes, strict=True))))
+
+            # Legacy partitions are deliberately read without their new provenance
+            # fields until their date could be selected. The integrated refresh only
+            # rewrites current and prior years, so validating every old partition
+            # would break otherwise complete historical caches.
+            candidate_dates = sorted(
+                {
+                    price_date
+                    for _, rows in partitions
+                    for price_date, close in rows
+                    if close is not None and price_date <= as_of.date()
+                },
+                reverse=True,
+            )
+            for price_date in candidate_dates:
+                date_candidates: list[PriceObservation] = []
+                for path, rows in partitions:
+                    for row_date, close in rows:
+                        if row_date != price_date or close is None:
+                            continue
+                        parquet = pq.ParquetFile(path)
+                        metadata = parquet.schema_arrow.metadata or {}
+                        stored_currency = _required_metadata(
+                            metadata, b'currency', path
+                        ).upper()
+                        source = _required_metadata(metadata, b'source', path)
+                        exchange_timezone = _required_metadata(
+                            metadata, b'exchange_timezone', path
                         )
-                    )
+                        exchange_calendar, retrieved_at, available_at = (
+                            _price_availability_provenance(
+                                metadata, price_date, exchange_timezone, path
+                            )
+                        )
+                        if available_at <= as_of:
+                            date_candidates.append(
+                                PriceObservation(
+                                    ticker=ticker,
+                                    as_of=price_date,
+                                    available_at=available_at,
+                                    price=Decimal(str(close)),
+                                    currency=stored_currency,
+                                    source=source,
+                                    source_partition=path.relative_to(
+                                        stocks_directory
+                                    ).as_posix(),
+                                    exchange_calendar=exchange_calendar,
+                                    retrieved_at=retrieved_at,
+                                )
+                            )
+                if date_candidates:
+                    candidates.extend(date_candidates)
+                    break
         if not candidates:
             msg = f'no daily price for {ticker} available at {as_of.isoformat()}'
             raise ValueError(msg)
@@ -174,10 +204,13 @@ def load_latest_daily_prices(
             for candidate in latest
         }
         if len(distinct) != 1:
-            partitions = ', '.join(
+            conflicting_partitions = ', '.join(
                 sorted(candidate.source_partition for candidate in latest)
             )
-            msg = f'conflicting latest daily prices for {ticker}: {partitions}'
+            msg = (
+                f'conflicting latest daily prices for {ticker}: '
+                f'{conflicting_partitions}'
+            )
             raise ValueError(msg)
         observation = min(latest, key=lambda candidate: candidate.source_partition)
         if observation.currency != currency:
@@ -197,6 +230,7 @@ def plan_rebalance(
     as_of: datetime,
     withdrawal: Decimal = Decimal(0),
     generated_at: datetime | None = None,
+    price_warnings: tuple[str, ...] = (),
 ) -> RebalancePlan:
     """Calculate a strict fractional-share rebalance order plan."""
     if strategy.metadata.name != assignment.strategy.name:
@@ -298,7 +332,7 @@ def plan_rebalance(
         (order.estimated_notional for order in orders if order.side == OrderSide.SELL),
         Decimal(0),
     )
-    warnings = _plan_warnings(positions, strategy, prices, as_of)
+    warnings = _plan_warnings(positions, strategy) + price_warnings
     return RebalancePlan(
         portfolio_id=portfolio.metadata.name,
         strategy_assignment_id=assignment.id,
@@ -331,8 +365,9 @@ def rebalance_portfolio(
     *,
     withdrawal: Decimal = Decimal(0),
     stocks_directory: Path = STOCKS_DIRECTORY,
+    allow_stale_prices: bool = False,
 ) -> RebalancePlan:
-    """Load all portfolio inputs and create its rebalance order plan."""
+    """Refresh and validate prices before creating a rebalance order plan."""
     portfolio_directory = data_directory / 'portfolio' / portfolio_id
     manifests = load_directory_manifests(portfolio_directory)
     _, portfolio = find_manifest_in(
@@ -345,11 +380,23 @@ def rebalance_portfolio(
     assignment = effective_assignment(history, as_of)
     strategy = load_strategy_revision(data_directory, assignment.strategy)
     positions, _ = derive_portfolio_state(portfolio, transactions, as_of)
+    tickers = set(positions) | set(strategy.target_weights)
+    provider_tickers = {ticker.replace('.', '-') for ticker in tickers}
+    download(
+        provider_tickers,
+        (as_of.year - 1, as_of.year),
+        Interval.DAILY,
+        stocks_directory=stocks_directory,
+        progress_stream=sys.stderr,
+    )
     prices = load_latest_daily_prices(
-        set(positions) | set(strategy.target_weights),
+        tickers,
         as_of,
         portfolio.spec.base_currency,
         stocks_directory,
+    )
+    price_warnings = validate_price_freshness(
+        prices, as_of, allow_stale=allow_stale_prices
     )
     return plan_rebalance(
         portfolio,
@@ -359,7 +406,52 @@ def rebalance_portfolio(
         prices,
         as_of=as_of,
         withdrawal=withdrawal,
+        price_warnings=price_warnings,
     )
+
+
+def expected_latest_session(
+    exchange_calendar: str,
+    as_of: datetime,
+    publication_delay: timedelta = PRICE_PUBLICATION_DELAY,
+) -> date:
+    """Return the latest session whose close should have been published."""
+    if as_of.tzinfo is None:
+        msg = 'price freshness time must include a UTC offset'
+        raise ValueError(msg)
+    try:
+        calendar = get_calendar(exchange_calendar)
+        cutoff = as_of.astimezone(UTC) - publication_delay
+        session = calendar.date_to_session(cutoff.date(), direction='previous')
+        if calendar.session_close(session).to_pydatetime() > cutoff:
+            session = calendar.previous_session(session)
+    except Exception as error:
+        msg = f'cannot resolve exchange calendar {exchange_calendar}: {error}'
+        raise ValueError(msg) from error
+    return cast('date', session.date())
+
+
+def validate_price_freshness(
+    prices: dict[str, PriceObservation],
+    as_of: datetime,
+    *,
+    allow_stale: bool = False,
+) -> tuple[str, ...]:
+    """Reject stale required prices or describe an explicit reviewed override."""
+    stale: list[tuple[str, date, date]] = []
+    for ticker, observation in sorted(prices.items()):
+        expected = expected_latest_session(observation.exchange_calendar, as_of)
+        if observation.as_of < expected:
+            stale.append((ticker, observation.as_of, expected))
+    if not stale:
+        return ()
+    details = ', '.join(
+        f'{ticker} ({observed.isoformat()}; expected {expected.isoformat()})'
+        for ticker, observed, expected in stale
+    )
+    if not allow_stale:
+        raise ValueError(f'stale prices for: {details}')
+    return (f'Explicitly allowed stale prices: {details}',)
 
 
 def _change_position(
@@ -385,16 +477,78 @@ def _required_metadata(metadata: dict[bytes, bytes], key: bytes, path: Path) -> 
     return value
 
 
-def _daily_close_available_at(
+def _required_datetime_metadata(
+    metadata: dict[bytes, bytes], key: bytes, path: Path
+) -> datetime:
+    """Read required timezone-aware ISO datetime metadata."""
+    value = _required_metadata(metadata, key, path)
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as error:
+        msg = f'{path}: metadata {key.decode()} must be an ISO datetime'
+        raise ValueError(msg) from error
+    if parsed.tzinfo is None:
+        msg = f'{path}: metadata {key.decode()} must include a UTC offset'
+        raise ValueError(msg)
+    return parsed
+
+
+def _price_availability_provenance(
+    metadata: dict[bytes, bytes],
+    price_date: date,
+    exchange_timezone: str,
+    path: Path,
+) -> tuple[str, datetime, datetime]:
+    """Qualify refreshed metadata or conservatively support a legacy cache row."""
+    calendar_value = metadata.get(b'exchange_calendar')
+    retrieved_value = metadata.get(b'retrieved_at_utc')
+    if calendar_value is None and retrieved_value is None:
+        available_at = _legacy_daily_close_available_at(
+            price_date, exchange_timezone, path
+        )
+        return LEGACY_EXCHANGE_CALENDAR, available_at.astimezone(UTC), available_at
+    if calendar_value is None or retrieved_value is None:
+        msg = f'{path}: incomplete refreshed price provenance metadata'
+        raise ValueError(msg)
+    exchange_calendar = _required_metadata(metadata, b'exchange_calendar', path)
+    retrieved_at = _required_datetime_metadata(metadata, b'retrieved_at_utc', path)
+    available_at = _daily_close_available_at(
+        price_date, exchange_timezone, exchange_calendar, path
+    )
+    return exchange_calendar, retrieved_at, available_at
+
+
+def _legacy_daily_close_available_at(
     price_date: date, exchange_timezone: str, path: Path
 ) -> datetime:
-    """Return the documented availability boundary for one daily close."""
+    """Use the pre-refresh 16:00 local-close rule for a legacy partition."""
     try:
         timezone = ZoneInfo(exchange_timezone)
     except ZoneInfoNotFoundError as error:
         msg = f'{path}: unknown exchange timezone {exchange_timezone}'
         raise ValueError(msg) from error
-    return datetime.combine(price_date, DAILY_CLOSE_TIME, tzinfo=timezone)
+    return datetime.combine(price_date, time(16), timezone)
+
+
+def _daily_close_available_at(
+    price_date: date,
+    exchange_timezone: str,
+    exchange_calendar: str,
+    path: Path,
+) -> datetime:
+    """Return the exchange close plus provider-publication delay."""
+    try:
+        timezone = ZoneInfo(exchange_timezone)
+    except ZoneInfoNotFoundError as error:
+        msg = f'{path}: unknown exchange timezone {exchange_timezone}'
+        raise ValueError(msg) from error
+    try:
+        calendar = get_calendar(exchange_calendar)
+        close = calendar.session_close(price_date).to_pydatetime()
+    except Exception as error:
+        msg = f'{path}: invalid {exchange_calendar} session {price_date}: {error}'
+        raise ValueError(msg) from error
+    return cast('datetime', (close + PRICE_PUBLICATION_DELAY).astimezone(timezone))
 
 
 def _required_quantity(transaction: Transaction) -> Decimal:
@@ -426,26 +580,13 @@ def _trade_amount(transaction: Transaction) -> Decimal:
 def _plan_warnings(
     positions: dict[str, Decimal],
     strategy: Strategy,
-    prices: dict[str, PriceObservation],
-    as_of: datetime,
 ) -> tuple[str, ...]:
-    """Describe non-strategy positions and stale valuation observations."""
+    """Describe non-strategy positions affected by the plan."""
     warnings: list[str] = []
     non_strategy = sorted(set(positions) - set(strategy.target_weights))
     if non_strategy:
         warnings.append(
             'Positions absent from the strategy will be closed: '
             + ', '.join(non_strategy)
-        )
-    stale = sorted(
-        ticker
-        for ticker, observation in prices.items()
-        if observation.as_of < as_of.date()
-    )
-    if stale:
-        oldest = min(prices[ticker].as_of for ticker in stale)
-        warnings.append(
-            f'Prices are older than the planning date for {len(stale)} ticker(s); '
-            f'the oldest is {oldest.isoformat()}'
         )
     return tuple(warnings)

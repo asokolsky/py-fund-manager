@@ -334,6 +334,8 @@ class PriceObservation(BaseModel):
     currency: str = Field(min_length=3, max_length=3)
     source: str = Field(min_length=1)
     source_partition: str = Field(min_length=1)
+    exchange_calendar: str = Field(min_length=1)
+    retrieved_at: datetime
 
     @field_validator('ticker', 'currency', mode='before')
     @classmethod
@@ -349,6 +351,9 @@ class PriceObservation(BaseModel):
             raise ValueError(msg)
         if self.available_at.date() != self.as_of:
             msg = 'price available_at must fall on the observation date'
+            raise ValueError(msg)
+        if self.retrieved_at.tzinfo is None:
+            msg = 'price retrieved_at must include a UTC offset'
             raise ValueError(msg)
         return self
 

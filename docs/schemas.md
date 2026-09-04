@@ -207,7 +207,7 @@ The rebalance command emits a validated JSON document to standard output:
       "target_value": "6123.46",
       "estimated_price": "220.00",
       "price_as_of": "2026-08-26",
-      "price_available_at": "2026-08-26T16:00:00-04:00",
+      "price_available_at": "2026-08-26T16:15:00-04:00",
       "price_source": "Yahoo Finance via yfinance",
       "price_source_partition": "interval=1d/ticker=AAPL/year=2026/data.parquet",
       "quantity": "17.833894",

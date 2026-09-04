@@ -21,7 +21,7 @@ class FakeTicker:
     def __init__(self, history: pd.DataFrame) -> None:
         """Initialize the fake with history returned by subsequent requests."""
         self._history = history
-        self.history_metadata = {'currency': 'USD'}
+        self.history_metadata = {'currency': 'USD', 'exchangeName': 'NMS'}
         self.history_kwargs: dict[str, object] = {}
         self.history_calls: list[dict[str, object]] = []
 
@@ -163,6 +163,7 @@ class TestDownload(unittest.TestCase):
                 self.assertEqual(table.num_rows, 1)
                 self.assertEqual(table.schema.metadata[b'ticker'], b'AAPL')
                 self.assertEqual(table.schema.metadata[b'bar_interval'], b'1w')
+                self.assertEqual(table.schema.metadata[b'exchange_calendar'], b'XNAS')
 
     def test_later_year_is_written_after_earlier_year_fails(self) -> None:
         """Continue requesting later years and preserve their successful files."""
@@ -217,7 +218,11 @@ class TestDownload(unittest.TestCase):
             _start_year: int,
             _end_year: int,
             _interval: downloader.Interval,
+            *,
+            stocks_directory: Path,
+            progress_stream: StringIO,
         ) -> int:
+            self.assertIsInstance(stocks_directory, Path)
             barrier.wait(timeout=1)
             with lock:
                 downloaded.add(ticker)
@@ -242,7 +247,11 @@ class TestDownload(unittest.TestCase):
             _start_year: int,
             _end_year: int,
             _interval: downloader.Interval,
+            *,
+            stocks_directory: Path,
+            progress_stream: StringIO,
         ) -> int:
+            self.assertIsInstance(stocks_directory, Path)
             if ticker == 'FAIL':
                 message = 'download failed'
                 raise RuntimeError(message)
@@ -310,6 +319,117 @@ class TestDownload(unittest.TestCase):
 
             self.assertEqual(destination.read_bytes(), b'previous data')
             self.assertEqual(list(destination.parent.glob('.data-*')), [])
+
+    def test_invalid_exchange_metadata_preserves_existing_partition(self) -> None:
+        """Reject unresolved exchange calendars before replacing cached data."""
+        history = pd.DataFrame(
+            {
+                'Open': [100.0],
+                'High': [102.0],
+                'Low': [99.0],
+                'Close': [101.0],
+                'Adj Close': [100.5],
+                'Volume': [1_000],
+            },
+            index=pd.DatetimeIndex(['2026-06-03'], tz='America/New_York'),
+        )
+        for exchange_name in ('', 'NOT-A-REAL-EXCHANGE'):
+            with (
+                self.subTest(exchange_name=exchange_name),
+                tempfile.TemporaryDirectory() as temporary_directory,
+            ):
+                output_directory = Path(temporary_directory)
+                destination = (
+                    output_directory / 'interval=1d/ticker=AAPL/year=2026/data.parquet'
+                )
+                destination.parent.mkdir(parents=True)
+                destination.write_bytes(b'previous data')
+                fake_ticker = FakeTicker(history)
+                fake_ticker.history_metadata['exchangeName'] = exchange_name
+
+                with (
+                    patch.object(downloader.yf, 'Ticker', return_value=fake_ticker),
+                    self.assertRaisesRegex(RuntimeError, 'exchange identifier'),
+                ):
+                    downloader.download_ticker(
+                        'AAPL',
+                        2026,
+                        2026,
+                        stocks_directory=output_directory,
+                    )
+
+                self.assertEqual(destination.read_bytes(), b'previous data')
+
+    def test_non_us_exchange_alias_is_canonicalized_before_replace(self) -> None:
+        """Resolve a supported Yahoo exchange alias before replacing its cache."""
+        history = pd.DataFrame(
+            {
+                'Open': [100.0],
+                'High': [102.0],
+                'Low': [99.0],
+                'Close': [101.0],
+                'Adj Close': [100.5],
+                'Volume': [1_000],
+            },
+            index=pd.DatetimeIndex(['2026-06-03'], tz='Europe/London'),
+        )
+        fake_ticker = FakeTicker(history)
+        fake_ticker.history_metadata['exchangeName'] = 'LSE'
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_directory = Path(temporary_directory)
+            destination = (
+                output_directory / 'interval=1d/ticker=VOD.L/year=2026/data.parquet'
+            )
+            destination.parent.mkdir(parents=True)
+            destination.write_bytes(b'previous data')
+
+            with patch.object(downloader.yf, 'Ticker', return_value=fake_ticker):
+                downloader.download_ticker(
+                    'VOD.L', 2026, 2026, stocks_directory=output_directory
+                )
+
+            metadata = pq.read_metadata(destination).metadata or {}
+            self.assertEqual(metadata[b'exchange_calendar'], b'XLON')
+
+    def test_invalid_timezone_and_currency_are_rejected_before_write(self) -> None:
+        """Require usable timezone and currency metadata for every partition."""
+        history = pd.DataFrame(
+            {
+                'Open': [100.0],
+                'High': [102.0],
+                'Low': [99.0],
+                'Close': [101.0],
+                'Adj Close': [100.5],
+                'Volume': [1_000],
+            },
+            index=pd.DatetimeIndex(['2026-06-03'], tz='America/New_York'),
+        )
+        cases: tuple[tuple[str, pd.DataFrame, dict[str, str], str], ...] = (
+            ('currency', history, {'currency': ''}, 'trading currency'),
+            (
+                'timezone',
+                history.tz_localize(None),
+                {},
+                'exchange timezone',
+            ),
+        )
+        for name, case_history, metadata, message in cases:
+            with (
+                self.subTest(name=name),
+                tempfile.TemporaryDirectory() as temporary_directory,
+            ):
+                fake_ticker = FakeTicker(case_history)
+                fake_ticker.history_metadata.update(metadata)
+                output_directory = Path(temporary_directory)
+                with (
+                    patch.object(downloader.yf, 'Ticker', return_value=fake_ticker),
+                    self.assertRaisesRegex(RuntimeError, message),
+                ):
+                    downloader.download_ticker(
+                        'AAPL', 2026, 2026, stocks_directory=output_directory
+                    )
+
+                self.assertFalse(list(output_directory.rglob('data.parquet')))
 
 
 if __name__ == '__main__':

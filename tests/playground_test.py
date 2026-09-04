@@ -34,7 +34,7 @@ from py_fund_manager.strategy import strategy_revision
 
 OPENED_AT = datetime(2020, 1, 2, 16, tzinfo=UTC)
 FIRST_PLAN_AT = datetime(2020, 1, 3, 15, tzinfo=UTC)
-FIRST_EXECUTION_AT = datetime(2020, 1, 3, 21, tzinfo=UTC)
+FIRST_EXECUTION_AT = datetime(2020, 1, 3, 21, 15, tzinfo=UTC)
 DIVIDEND_AT = datetime(2020, 3, 13, 16, tzinfo=UTC)
 SECOND_PLAN_AT = datetime(2020, 3, 13, 21, tzinfo=UTC)
 SECOND_EXECUTION_AT = SECOND_PLAN_AT
@@ -340,6 +340,8 @@ class TestPlayground(unittest.TestCase):
                     b'currency': b'USD',
                     b'source': b'Playground test fixture',
                     b'exchange_timezone': b'America/New_York',
+                    b'exchange_calendar': b'XNAS',
+                    b'retrieved_at_utc': b'2026-08-26T11:00:00+00:00',
                 }
             )
             pq.write_table(table, path)
