@@ -8,16 +8,36 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
+from typing import TextIO
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import yfinance as yf
+from exchange_calendars import get_calendar
+from exchange_calendars.errors import InvalidCalendarName
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 STOCKS_DIRECTORY = PROJECT_ROOT / 'stocks-by-ticker'
 TICKER_PATTERN = re.compile(r'^[A-Z0-9.^=_-]+$')
 YEAR_RANGE_PATTERN = re.compile(r'^(\d{4})(?:-(\d{4}))?$')
+YAHOO_EXCHANGE_CALENDARS = {
+    'ASE': 'XNYS',
+    'BTS': 'XNYS',
+    'NCM': 'XNAS',
+    'NGM': 'XNAS',
+    'NMS': 'XNAS',
+    'NYQ': 'XNYS',
+    'PCX': 'ARCX',
+    'LSE': 'XLON',
+}
+YAHOO_CLASS_SHARE_TICKERS = {
+    'BF.A': 'BF-A',
+    'BF.B': 'BF-B',
+    'BRK.A': 'BRK-A',
+    'BRK.B': 'BRK-B',
+}
 
 
 class Interval(StrEnum):
@@ -33,6 +53,11 @@ class Interval(StrEnum):
         if self is Interval.WEEKLY:
             return '1wk'
         return self.value
+
+
+def yahoo_ticker(ticker: str) -> str:
+    """Return the Yahoo symbol for a known class-share ticker."""
+    return YAHOO_CLASS_SHARE_TICKERS.get(ticker, ticker)
 
 
 def comma_separated_tickers(value: str) -> set[str]:
@@ -190,13 +215,65 @@ def write_year(
         temporary_path.unlink(missing_ok=True)
 
 
+def _validated_price_metadata(
+    stock: object,
+    history: pd.DataFrame,
+    *,
+    ticker: str,
+    year: int,
+    interval: Interval,
+    retrieved_at: str,
+) -> dict[bytes, bytes]:
+    """Resolve complete provider metadata before replacing a cached partition."""
+    exchange_timezone = str(history.index.tz or '').strip()
+    try:
+        ZoneInfo(exchange_timezone)
+    except (ValueError, ZoneInfoNotFoundError) as error:
+        raise ValueError(
+            f'Unknown or missing exchange timezone: {exchange_timezone!r}'
+        ) from error
+
+    history_metadata = getattr(stock, 'history_metadata', {})
+    currency = str(history_metadata.get('currency', '')).strip().upper()
+    if re.fullmatch(r'[A-Z]{3}', currency) is None:
+        raise ValueError(f'Invalid or missing trading currency: {currency!r}')
+
+    exchange_name = str(history_metadata.get('exchangeName', '')).strip().upper()
+    exchange_calendar = YAHOO_EXCHANGE_CALENDARS.get(exchange_name, exchange_name)
+    if not exchange_calendar:
+        message = 'Missing Yahoo exchange identifier'
+        raise ValueError(message)
+    try:
+        get_calendar(exchange_calendar)
+    except InvalidCalendarName as error:
+        raise ValueError(
+            f'Unsupported Yahoo exchange identifier: {exchange_name!r}'
+        ) from error
+
+    return {
+        b'ticker': ticker.encode(),
+        b'year': str(year).encode(),
+        b'source': b'Yahoo Finance via yfinance',
+        b'retrieved_at_utc': retrieved_at.encode(),
+        b'exchange_timezone': exchange_timezone.encode(),
+        b'exchange_calendar': exchange_calendar.encode(),
+        b'currency': currency.encode(),
+        b'bar_interval': interval.value.encode(),
+    }
+
+
 def download_ticker(
     ticker: str,
     start_year: int,
     end_year: int,
     interval: Interval = Interval.DAILY,
+    *,
+    stocks_directory: Path | None = None,
+    progress_stream: TextIO | None = None,
 ) -> int:
     """Download and store the requested history for one ticker."""
+    stocks_directory = stocks_directory or STOCKS_DIRECTORY
+    progress_stream = progress_stream or sys.stdout
     yf.config.debug.hide_exceptions = False
     stock = yf.Ticker(ticker)
     retrieved_at = datetime.now(tz=UTC).isoformat()
@@ -214,31 +291,27 @@ def download_ticker(
                 repair=True,
             )
             normalized = normalize_requested_year(history, year, interval)
+            metadata = _validated_price_metadata(
+                stock,
+                history,
+                ticker=ticker,
+                year=year,
+                interval=interval,
+                retrieved_at=retrieved_at,
+            )
         except Exception as error:
             failures.append(f'{year}: {error}')
             continue
 
-        exchange_timezone = str(history.index.tz or '')
-        history_metadata = getattr(stock, 'history_metadata', {})
-        currency = str(history_metadata.get('currency', ''))
         destination = (
-            STOCKS_DIRECTORY
+            stocks_directory
             / f'interval={interval.value}'
             / f'ticker={ticker}'
             / f'year={year}'
             / 'data.parquet'
         )
-        metadata = {
-            b'ticker': ticker.encode(),
-            b'year': str(year).encode(),
-            b'source': b'Yahoo Finance via yfinance',
-            b'retrieved_at_utc': retrieved_at.encode(),
-            b'exchange_timezone': exchange_timezone.encode(),
-            b'currency': currency.encode(),
-            b'bar_interval': interval.value.encode(),
-        }
         write_year(normalized, destination, metadata)
-        print(f'Wrote {len(normalized)} rows to {destination}')
+        print(f'Wrote {len(normalized)} rows to {destination}', file=progress_stream)
         files_written += 1
 
     if failures:
@@ -251,8 +324,13 @@ def download(
     tickers: set[str],
     years: tuple[int, int],
     interval: Interval = Interval.DAILY,
+    *,
+    stocks_directory: Path | None = None,
+    progress_stream: TextIO | None = None,
 ) -> int:
     """Download tickers concurrently while preserving successful results."""
+    stocks_directory = stocks_directory or STOCKS_DIRECTORY
+    progress_stream = progress_stream or sys.stdout
     start_year, end_year = years
     failures = 0
     workers = min(6, len(tickers))
@@ -264,6 +342,8 @@ def download(
                 start_year,
                 end_year,
                 interval,
+                stocks_directory=stocks_directory,
+                progress_stream=progress_stream,
             ): ticker
             for ticker in tickers
         }
